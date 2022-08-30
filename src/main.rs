@@ -1,5 +1,7 @@
 // use reqwest::Client;
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 // #[tokio::main]
 // async
@@ -260,7 +262,6 @@ struct Annotations {
     strikethrough: bool,
     underline: bool,
     code: bool,
-    color: String,
 }
 
 /// Block Object
@@ -269,159 +270,165 @@ struct Annotations {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Block {
     Paragraph {
-        #[serde(flatten)]
-        common: BlockCommon,
-        paragraph: ParagraphContent,
+        id: Uuid,
+        archived: bool,
+        paragraph: InlineContent,
+        has_children: bool,
+        #[serde(skip)]
+        children: Option<Vec<Block>>,
     },
     #[serde(rename = "heading_1")]
     Heading1 {
-        #[serde(flatten)]
-        common: BlockCommon,
-        heading_1: HeadingContent,
+        id: Uuid,
+        archived: bool,
+        heading_1: InlineContent,
     },
     #[serde(rename = "heading_2")]
     Heading2 {
-        #[serde(flatten)]
-        common: BlockCommon,
-        heading_2: HeadingContent,
+        id: Uuid,
+        archived: bool,
+        heading_2: InlineContent,
     },
     #[serde(rename = "heading_3")]
     Heading3 {
-        #[serde(flatten)]
-        common: BlockCommon,
-        heading_3: HeadingContent,
+        id: Uuid,
+        archived: bool,
+        heading_3: InlineContent,
     },
     Callout {
-        #[serde(flatten)]
-        common: BlockCommon,
-        callout: ParagraphContent, // icon is ignored
+        id: Uuid,
+        archived: bool,
+        callout: InlineContent, // icon is ignored
+        has_children: bool,
+        #[serde(skip)]
+        children: Option<Vec<Block>>,
     },
     Quote {
-        #[serde(flatten)]
-        common: BlockCommon,
-        quote: ParagraphContent,
+        id: Uuid,
+        archived: bool,
+        quote: InlineContent,
+        has_children: bool,
+        #[serde(skip)]
+        children: Option<Vec<Block>>,
     },
     BulletedListItem {
-        #[serde(flatten)]
-        common: BlockCommon,
-        bulleted_list_item: ParagraphContent,
+        id: Uuid,
+        archived: bool,
+        bulleted_list_item: InlineContent,
+        has_children: bool,
+        #[serde(skip)]
+        children: Option<Vec<Block>>,
     },
     NumberedListItem {
-        #[serde(flatten)]
-        common: BlockCommon,
-        numbered_list_item: ParagraphContent,
+        id: Uuid,
+        archived: bool,
+        numbered_list_item: InlineContent,
+        has_children: bool,
+        #[serde(skip, default)]
+        children: Option<Vec<Block>>,
     },
     ToDo {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         to_do: ToDoContent,
+        has_children: bool,
+        #[serde(skip, default)]
+        children: Option<Vec<Block>>,
     },
     Toggle {
-        #[serde(flatten)]
-        common: BlockCommon,
-        toggle: ParagraphContent,
+        id: Uuid,
+        archived: bool,
+        toggle: InlineContent,
+        has_children: bool,
+        #[serde(skip, default)]
+        children: Option<Vec<Block>>,
     },
     Code {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         code: CodeContent,
     },
-    ChildPage,
-    ChildDatabase,
+    // ChildPage,
+    // ChildDatabase,
     Embed {
-        #[serde(flatten)]
-        common: BlockCommon,
-        embed: Link,
+        id: Uuid,
+        archived: bool,
+        embed: EmbedContent,
     },
     Image {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         image: FileContent,
     },
     Video {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         video: FileContent,
     },
     File {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         file: FileContent,
     },
     #[serde(rename = "pdf")]
     PDF {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         pdf: FileContent,
     },
-    Bookmark,
+    // Bookmark,
     Equation {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         equation: EquationContent,
     },
     Divider {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
     },
     TableOfContents {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
     },
-    Breadcrumb {
-        #[serde(flatten)]
-        common: BlockCommon,
-    },
-    Column,
-    ColumnList,
-    LinkPreview {
-        #[serde(flatten)]
-        common: BlockCommon,
-        link_preview: LinkPreviewContent,
-    },
-    Template,
+    // Breadcrumb,
+    // Column,
+    // ColumnList,
+    // LinkPreview,
+    // Template,
     LinkToPage {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         link_to_page: LinkToPageContent,
     },
-    SyncedBlock,
+    // SyncedBlock,
     Table {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
+        children: Vec<Block>,
         table: TableContent,
     },
     TableRow {
-        #[serde(flatten)]
-        common: BlockCommon,
+        id: Uuid,
+        archived: bool,
         table_row: TableRowContent,
     },
+    #[serde(other)]
     Unsupported,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct BlockCommon {
-    id: String,
-    archived: bool,
-    has_children: bool,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct ParagraphContent {
+struct InlineContent {
     rich_text: Vec<RichText>,
-    color: String,
-    children: Option<Vec<Block>>,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct HeadingContent {
-    rich_text: Vec<RichText>,
-    color: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct ToDoContent {
     rich_text: Vec<RichText>,
     #[serde(default)]
     checked: bool,
-    color: String,
-    children: Option<Vec<Block>>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct EmbedContent {
+    caption: Vec<RichText>,
+    url: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct CodeContent {
@@ -452,13 +459,23 @@ struct FileLink {
     /// but updated links can be requested if required.
     url: String,
     /// Date and time when this will expire. Formatted as an ISO 8601 date time string.
-    expiry_time: String,
+    expiry_time: DateTime<Local>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct LinkPreviewContent {}
 #[derive(Debug, Serialize, Deserialize)]
-struct LinkToPageContent {}
+#[serde(tag = "type", rename = "snake_case")]
+enum LinkToPageContent {
+    PageId { page_id: Uuid },
+    DatabaseId { database_id: Uuid },
+}
 #[derive(Debug, Serialize, Deserialize)]
-struct TableContent {}
+struct TableContent {
+    table_width: u64,
+    has_column_header: bool,
+    has_row_header: bool,
+}
 #[derive(Debug, Serialize, Deserialize)]
-struct TableRowContent {}
+struct TableRowContent {
+    cells: Vec<Vec<RichText>>,
+}
