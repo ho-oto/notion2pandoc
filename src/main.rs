@@ -1,5 +1,5 @@
-// use reqwest::Client;
 use chrono::{DateTime, Local};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -206,42 +206,26 @@ struct PageContents {
     results: Vec<Block>,
 }
 
-/// Rich Text Object
-/// https://developers.notion.com/reference/rich-text
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum RichText {
     Text {
-        #[serde(flatten)]
-        common: RichTextCommon,
+        annotations: Annotations,
         text: TextContent,
     },
     Mention {
-        #[serde(flatten)]
-        common: RichTextCommon,
+        plain_text: String,
+        annotations: Annotations,
         mention: MentionContent,
     },
     Equation {
-        #[serde(flatten)]
-        common: RichTextCommon,
+        annotations: Annotations,
         equation: EquationContent,
     },
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct RichTextCommon {
-    /// The plain text without annotations.
-    plain_text: String,
-    /// The URL of any link or internal Notion mention in this text, if any.
-    href: Option<String>,
-    /// All annotations that apply to this rich text.
-    annotations: Annotations,
-}
-#[derive(Debug, Serialize, Deserialize)]
 struct TextContent {
-    /// Text content. This field contains the actual content of your text and
-    /// is probably the field you'll use most often.
     content: String,
-    /// Any inline link in this text.
     link: Option<Link>,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -249,10 +233,18 @@ struct Link {
     url: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct MentionContent {} // ignore mention
+#[serde(tag = "type", rename_all = "lowercase")]
+enum MentionContent {
+    Page { page: PageId },
+    Date,
+    User,
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct PageId {
+    id: Uuid,
+}
 #[derive(Debug, Serialize, Deserialize)]
 struct EquationContent {
-    /// The LaTeX string representing this inline equation.
     expression: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -404,8 +396,9 @@ enum Block {
     Table {
         id: Uuid,
         archived: bool,
-        children: Vec<Block>,
         table: TableContent,
+        #[serde(skip)]
+        children: Vec<Block>,
     },
     TableRow {
         id: Uuid,
@@ -422,7 +415,6 @@ struct InlineContent {
 #[derive(Debug, Serialize, Deserialize)]
 struct ToDoContent {
     rich_text: Vec<RichText>,
-    #[serde(default)]
     checked: bool,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -462,9 +454,7 @@ struct FileLink {
     expiry_time: DateTime<Local>,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct LinkPreviewContent {}
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum LinkToPageContent {
     PageId { page_id: Uuid },
     DatabaseId { database_id: Uuid },
