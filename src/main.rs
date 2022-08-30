@@ -21,11 +21,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             vec![("page_size", "100".to_string())]
         };
 
-        println!("{:#?}", parms);
-
         let client = Client::new()
             .get(&url)
-            //            .query(&parms)
+            .query(&parms)
             .header("Authorization", format!("Bearer {}", secret))
             .header("Notion-Version", "2022-06-28");
 
