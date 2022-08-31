@@ -10,13 +10,24 @@ static SECRET: &str = "secret_zzz";
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "{:#?}",
-        fetch_children(
+        fetch_page(
             "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
             SECRET.to_string()
         )
         .await?
     );
     Ok(())
+}
+
+async fn fetch_page(
+    id: String,
+    secret: String,
+) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
+    let mut x = fetch_children(id, secret).await?;
+    x.iter_mut().for_each(|x| {
+        x.fetch_all();
+    });
+    Ok(x)
 }
 
 async fn fetch_children(
@@ -46,6 +57,20 @@ async fn fetch_children(
     Ok(blocks)
 }
 
+impl NotionBlock {
+    async fn fetch_all(&mut self) {
+        if !self.has_children {
+            return;
+        }
+        let mut children = fetch_children(self.id.to_string(), SECRET.to_string())
+            .await
+            .unwrap();
+        children.iter_mut().for_each(|x| {
+            x.fetch_all();
+        });
+        self.children = Some(children);
+    }
+}
 // fn notion2pandoc(x: NotionPage) -> Pandoc {
 //     //let x = Vec::<pandoc::Block>::new();
 //     Pandoc {
