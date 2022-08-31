@@ -3,40 +3,47 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+static NOTION_API_VERSION: &str = "2022-06-28";
+static SECRET: &str = "secret_zzz";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let page_id = "XXX";
-    let secret = "secret_YYY";
+    println!(
+        "{:#?}",
+        fetch_children(
+            "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
+            SECRET.to_string()
+        )
+        .await?
+    );
+    Ok(())
+}
 
+async fn fetch_children(
+    id: String,
+    secret: String,
+) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
     let mut has_more = true;
     let mut next_cursor = None;
     let mut blocks = Vec::<NotionBlock>::new();
-
     while has_more {
-        let url = format!("https://api.notion.com/v1/blocks/{}/children", page_id);
-
+        let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
         let parms = if let Some(n) = next_cursor {
             vec![("page_size", "100".to_string()), ("next_cursor", n)]
         } else {
             vec![("page_size", "100".to_string())]
         };
-
         let client = Client::new()
             .get(&url)
             .query(&parms)
             .header("Authorization", format!("Bearer {}", secret))
-            .header("Notion-Version", "2022-06-28");
-
+            .header("Notion-Version", NOTION_API_VERSION);
         let mut page = client.send().await?.json::<NotionPage>().await?;
-
         next_cursor = page.next_cursor.clone();
         has_more = page.has_more;
-
         blocks.append(&mut page.results);
     }
-
-    println!("{:#?}", blocks);
-    Ok(())
+    Ok(blocks)
 }
 
 // fn notion2pandoc(x: NotionPage) -> Pandoc {
@@ -59,159 +66,100 @@ struct NotionPage {
     results: Vec<NotionBlock>,
 }
 
-/// Block Object
-/// https://developers.notion.com/reference/block
+#[derive(Debug, Serialize, Deserialize)]
+struct NotionBlock {
+    id: Uuid,
+    archived: bool,
+    has_children: bool,
+    #[serde(skip)]
+    children: Option<Vec<NotionBlock>>,
+    #[serde(flatten)]
+    variant: NotionBlockVariant,
+}
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum NotionBlock {
-    /// paragraph
+enum NotionBlockVariant {
     Paragraph {
-        id: Uuid,
-        archived: bool,
         paragraph: InlineContent,
-        has_children: bool,
-        #[serde(skip)]
-        children: Option<Vec<NotionBlock>>,
     },
     #[serde(rename = "heading_1")]
     Heading1 {
-        id: Uuid,
-        archived: bool,
         heading_1: InlineContent,
     },
     #[serde(rename = "heading_2")]
     Heading2 {
-        id: Uuid,
-        archived: bool,
         heading_2: InlineContent,
     },
     #[serde(rename = "heading_3")]
     Heading3 {
-        id: Uuid,
-        archived: bool,
         heading_3: InlineContent,
     },
     Callout {
-        id: Uuid,
-        archived: bool,
         callout: InlineContent, // icon is ignored
-        has_children: bool,
-        #[serde(skip)]
-        children: Option<Vec<NotionBlock>>,
     },
     Quote {
-        id: Uuid,
-        archived: bool,
         quote: InlineContent,
-        has_children: bool,
-        #[serde(skip)]
-        children: Option<Vec<NotionBlock>>,
     },
     BulletedListItem {
-        id: Uuid,
-        archived: bool,
         bulleted_list_item: InlineContent,
-        has_children: bool,
-        #[serde(skip)]
-        children: Option<Vec<NotionBlock>>,
     },
     NumberedListItem {
-        id: Uuid,
-        archived: bool,
         numbered_list_item: InlineContent,
-        has_children: bool,
-        #[serde(skip, default)]
-        children: Option<Vec<NotionBlock>>,
     },
     ToDo {
-        id: Uuid,
-        archived: bool,
         to_do: ToDoContent,
-        has_children: bool,
-        #[serde(skip, default)]
-        children: Option<Vec<NotionBlock>>,
     },
     Toggle {
-        id: Uuid,
-        archived: bool,
         toggle: InlineContent,
-        has_children: bool,
-        #[serde(skip, default)]
-        children: Option<Vec<NotionBlock>>,
     },
     Code {
-        id: Uuid,
-        archived: bool,
         code: CodeContent,
     },
     // ChildPage,
     // ChildDatabase,
     Embed {
-        id: Uuid,
-        archived: bool,
         embed: EmbedContent,
     },
     Image {
-        id: Uuid,
-        archived: bool,
         image: FileContent,
     },
     Video {
-        id: Uuid,
-        archived: bool,
         video: FileContent,
     },
     File {
-        id: Uuid,
-        archived: bool,
         file: FileContent,
     },
     #[serde(rename = "pdf")]
     PDF {
-        id: Uuid,
-        archived: bool,
         pdf: FileContent,
     },
     // Bookmark,
     Equation {
-        id: Uuid,
-        archived: bool,
         equation: EquationContent,
     },
-    Divider {
-        id: Uuid,
-        archived: bool,
-    },
-    TableOfContents {
-        id: Uuid,
-        archived: bool,
-    },
+    Divider,
+    TableOfContents,
     // Breadcrumb,
     // Column,
     // ColumnList,
-    // LinkPreview,
+    LinkPreview {
+        link_preview: Link,
+    },
     // Template,
     LinkToPage {
-        id: Uuid,
-        archived: bool,
         link_to_page: LinkToPageContent,
     },
     // SyncedBlock,
     Table {
-        id: Uuid,
-        archived: bool,
         table: TableContent,
-        #[serde(skip)]
-        children: Vec<NotionBlock>,
     },
     TableRow {
-        id: Uuid,
-        archived: bool,
         table_row: TableRowContent,
     },
     #[serde(other)]
     Unsupported,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 struct InlineContent {
     rich_text: Vec<NotionRichText>,
@@ -332,10 +280,8 @@ struct Pandoc {
     meta: Meta,
     blocks: Vec<Block>,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Meta {}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum Block {
@@ -359,7 +305,6 @@ enum Block {
     // Div,
     // Null,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum Inline {
@@ -382,7 +327,6 @@ enum Inline {
     Note(Vec<Block>),
     Span(Attr, Vec<Inline>),
 }
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum Alignment {
@@ -392,10 +336,8 @@ enum Alignment {
     #[default]
     AlignDefault,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 struct ListAttributes(u64, ListNumberStyle, ListNumberDelim);
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum ListNumberStyle {
@@ -408,7 +350,6 @@ enum ListNumberStyle {
     LowerAlpha,
     UpperAlpha,
 }
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum ListNumberDelim {
@@ -418,19 +359,14 @@ enum ListNumberDelim {
     OneParen,
     TwoParens,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Format(String);
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Attr(String, Vec<String>, Vec<(String, String)>);
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Target(String, String);
-
 #[derive(Debug, Serialize, Deserialize)]
 struct TableCell(Vec<Block>);
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum MathType {
