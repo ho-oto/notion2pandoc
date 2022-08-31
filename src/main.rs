@@ -23,13 +23,13 @@ async fn fetch_children(
     id: String,
     secret: String,
 ) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
+    let mut blocks = Vec::<NotionBlock>::new();
     let mut has_more = true;
     let mut next_cursor = None;
-    let mut blocks = Vec::<NotionBlock>::new();
     while has_more {
         let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
         let parms = if let Some(n) = next_cursor {
-            vec![("page_size", "100".to_string()), ("next_cursor", n)]
+            vec![("page_size", "100".to_string()), ("start_cursor", n)]
         } else {
             vec![("page_size", "100".to_string())]
         };
@@ -39,7 +39,7 @@ async fn fetch_children(
             .header("Authorization", format!("Bearer {}", secret))
             .header("Notion-Version", NOTION_API_VERSION);
         let mut page = client.send().await?.json::<NotionPage>().await?;
-        next_cursor = page.next_cursor.clone();
+        next_cursor = page.next_cursor;
         has_more = page.has_more;
         blocks.append(&mut page.results);
     }
@@ -95,7 +95,7 @@ enum NotionBlockVariant {
         heading_3: InlineContent,
     },
     Callout {
-        callout: InlineContent, // icon is ignored
+        callout: CalloutContent,
     },
     Quote {
         quote: InlineContent,
@@ -159,10 +159,24 @@ enum NotionBlockVariant {
     #[serde(other)]
     Unsupported,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 struct InlineContent {
     rich_text: Vec<NotionRichText>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct CalloutContent {
+    rich_text: Vec<NotionRichText>,
+    icon: Icon,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Icon {
+    Emoji { emoji: String },
+    External { external: Link },
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct Emoji {
+    emoji: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct ToDoContent {
