@@ -9,31 +9,30 @@ static NOTION_API_VERSION: &str = "2022-06-28";
 static SECRET: &str = "secret_zzz";
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     println!(
         "{:#?}",
         fetch_page(
             "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
             SECRET.to_string()
         )
-        .await?
-    );
-    Ok(())
+        .await
+    )
 }
 
-async fn fetch_page(
-    id: String,
-    secret: String,
-) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
-    let mut x = fetch_children(id, secret).await?;
-    join_all(x.iter_mut().map(|x| async { x.fetch_all().await })).await;
-    Ok(x)
+async fn fetch_page(id: String, secret: String) -> Vec<NotionBlock> {
+    let mut x = fetch_children(id, secret).await;
+    join_all(x.iter_mut().map(|x| async { x.fetch_recursive().await })).await;
+    x
 }
 
-async fn fetch_children(
-    id: String,
-    secret: String,
-) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
+#[derive(Deserialize)]
+struct NotionResponse {
+    has_more: bool,
+    next_cursor: Option<String>,
+    results: Vec<NotionBlock>,
+}
+async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
     let mut blocks = Vec::<NotionBlock>::new();
     let mut has_more = true;
     let mut next_cursor = None;
@@ -49,45 +48,18 @@ async fn fetch_children(
             .query(&parms)
             .header("Authorization", format!("Bearer {}", secret))
             .header("Notion-Version", NOTION_API_VERSION);
-        let mut page = client.send().await?.json::<NotionPage>().await?;
+        let mut page = client
+            .send()
+            .await
+            .unwrap_or_else(|_| panic!("failed to fetch children blocks of {}", id))
+            .json::<NotionResponse>()
+            .await
+            .unwrap_or_else(|_| panic!("failed to deserialize children blocks of {}", id));
         next_cursor = page.next_cursor;
         has_more = page.has_more;
         blocks.append(&mut page.results);
     }
-    Ok(blocks)
-}
-
-impl NotionBlock {
-    #[async_recursion]
-    async fn fetch_all(&mut self) {
-        if !self.has_children {
-            return;
-        }
-        let mut children = fetch_children(self.id.to_string(), SECRET.to_string())
-            .await
-            .unwrap();
-        join_all(children.iter_mut().map(|x| async { x.fetch_all().await })).await;
-        self.children = Some(children);
-    }
-}
-// fn notion2pandoc(x: NotionPage) -> Pandoc {
-//     //let x = Vec::<pandoc::Block>::new();
-//     Pandoc {
-//         pandoc_api_version: [1, 22, 2, 1],
-//         meta: Meta {},
-//         blocks: x
-//             .results
-//             .iter()
-//             .map(|_| Block::HorizontalRule)
-//             .collect::<Vec<Block>>(),
-//     }
-// }
-
-#[derive(Debug, Serialize, Deserialize)]
-struct NotionPage {
-    has_more: bool,
-    next_cursor: Option<String>,
-    results: Vec<NotionBlock>,
+    blocks
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -183,6 +155,23 @@ enum NotionBlockVariant {
     #[serde(other)]
     Unsupported,
 }
+impl NotionBlock {
+    #[async_recursion]
+    async fn fetch_recursive(&mut self) {
+        if !self.has_children {
+            return;
+        }
+        let mut children = fetch_children(self.id.to_string(), SECRET.to_string()).await;
+        join_all(
+            children
+                .iter_mut()
+                .map(|x| async { x.fetch_recursive().await }),
+        )
+        .await;
+        self.children = Some(children);
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct InlineContent {
     rich_text: Vec<NotionRichText>,
