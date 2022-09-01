@@ -1,4 +1,6 @@
+use async_recursion::async_recursion;
 use chrono::{DateTime, Local};
+use futures::future::join_all;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -24,9 +26,7 @@ async fn fetch_page(
     secret: String,
 ) -> Result<Vec<NotionBlock>, Box<dyn std::error::Error>> {
     let mut x = fetch_children(id, secret).await?;
-    x.iter_mut().for_each(|x| {
-        x.fetch_all();
-    });
+    join_all(x.iter_mut().map(|x| async { x.fetch_all().await })).await;
     Ok(x)
 }
 
@@ -58,6 +58,7 @@ async fn fetch_children(
 }
 
 impl NotionBlock {
+    #[async_recursion]
     async fn fetch_all(&mut self) {
         if !self.has_children {
             return;
@@ -65,9 +66,7 @@ impl NotionBlock {
         let mut children = fetch_children(self.id.to_string(), SECRET.to_string())
             .await
             .unwrap();
-        children.iter_mut().for_each(|x| {
-            x.fetch_all();
-        });
+        join_all(children.iter_mut().map(|x| async { x.fetch_all().await })).await;
         self.children = Some(children);
     }
 }
