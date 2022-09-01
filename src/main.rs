@@ -16,7 +16,8 @@ async fn main() {
             "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
             SECRET.to_string()
         )
-        .await
+        .await[0]
+            .flatten()
     )
 }
 
@@ -38,14 +39,14 @@ async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
     let mut next_cursor = None;
     while has_more {
         let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
-        let parms = if let Some(n) = next_cursor {
+        let params = if let Some(n) = next_cursor {
             vec![("page_size", "100".to_string()), ("start_cursor", n)]
         } else {
             vec![("page_size", "100".to_string())]
         };
         let client = Client::new()
             .get(&url)
-            .query(&parms)
+            .query(&params)
             .header("Authorization", format!("Bearer {}", secret))
             .header("Notion-Version", NOTION_API_VERSION);
         let mut page = client
@@ -62,7 +63,7 @@ async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
     blocks
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct NotionBlock {
     id: Uuid,
     archived: bool,
@@ -72,7 +73,7 @@ struct NotionBlock {
     #[serde(flatten)]
     variant: NotionBlockVariant,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum NotionBlockVariant {
     Paragraph {
@@ -170,44 +171,71 @@ impl NotionBlock {
         .await;
         self.children = Some(children);
     }
+
+    fn flatten(&self) -> Vec<Self> {
+        let mut result = Vec::<Self>::new();
+        match &self.variant {
+            NotionBlockVariant::Paragraph { paragraph: _ } => {
+                if let Some(children) = self.clone().children {
+                    let x = NotionBlock {
+                        id: self.id,
+                        archived: self.archived,
+                        has_children: false,
+                        children: None,
+                        variant: self.variant.clone(),
+                    };
+                    result.push(x);
+                    result.extend(children.into_iter().map(|x| x.flatten()).flatten());
+                } else {
+                    result.push(self.clone());
+                }
+            }
+            _ => {
+                result.push(self.clone());
+            }
+        }
+        result
+    }
+
+    fn flatten_recursive(&mut self) {}
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct InlineContent {
     rich_text: Vec<NotionRichText>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct CalloutContent {
     rich_text: Vec<NotionRichText>,
     icon: Icon,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Icon {
     Emoji { emoji: String },
     External { external: Link },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Emoji {
     emoji: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct ToDoContent {
     rich_text: Vec<NotionRichText>,
     checked: bool,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct EmbedContent {
     caption: Vec<NotionRichText>,
     url: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct CodeContent {
     rich_text: Vec<NotionRichText>,
     caption: Vec<NotionRichText>,
     language: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum FileContent {
     External {
@@ -219,12 +247,12 @@ enum FileContent {
         file: FileLink,
     },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct ExternalFileLink {
     /// Link to the externally hosted content.
     url: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct FileLink {
     /// Authenticated S3 URL to the file. The file URL will be valid for 1 hour
     /// but updated links can be requested if required.
@@ -232,24 +260,24 @@ struct FileLink {
     /// Date and time when this will expire. Formatted as an ISO 8601 date time string.
     expiry_time: DateTime<Local>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum LinkToPageContent {
     PageId { page_id: Uuid },
     DatabaseId { database_id: Uuid },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct TableContent {
     table_width: u64,
     has_column_header: bool,
     has_row_header: bool,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct TableRowContent {
     cells: Vec<Vec<NotionRichText>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum NotionRichText {
     Text {
@@ -266,31 +294,31 @@ enum NotionRichText {
         equation: EquationContent,
     },
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct TextContent {
     content: String,
     link: Option<Link>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Link {
     url: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum MentionContent {
     Page { page: NotionPageId },
     Date,
     User,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct NotionPageId {
     id: Uuid,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct EquationContent {
     expression: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct NotionAnnotations {
     bold: bool,
     italic: bool,
