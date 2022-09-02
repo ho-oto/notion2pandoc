@@ -12,12 +12,13 @@ static SECRET: &str = "secret_zzz";
 async fn main() {
     println!(
         "{:#?}",
-        fetch_page(
-            "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
-            SECRET.to_string()
+        flatten(
+            fetch_page(
+                "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
+                SECRET.to_string()
+            )
+            .await
         )
-        .await[0]
-            .flatten()
     )
 }
 
@@ -171,33 +172,34 @@ impl NotionBlock {
         .await;
         self.children = Some(children);
     }
+}
 
-    fn flatten(&self) -> Vec<Self> {
-        let mut result = Vec::<Self>::new();
-        match &self.variant {
-            NotionBlockVariant::Paragraph { paragraph: _ } => {
-                if let Some(children) = self.clone().children {
-                    let x = NotionBlock {
-                        id: self.id,
-                        archived: self.archived,
+fn flatten(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
+    let mut result = Vec::<NotionBlock>::new();
+    for block in blocks {
+        if let Some(children) = block.children {
+            let mut flattened_children = flatten(children);
+            match block.variant {
+                NotionBlockVariant::Paragraph { paragraph: _ } => {
+                    result.push(NotionBlock {
                         has_children: false,
                         children: None,
-                        variant: self.variant.clone(),
-                    };
-                    result.push(x);
-                    result.extend(children.into_iter().map(|x| x.flatten()).flatten());
-                } else {
-                    result.push(self.clone());
+                        ..block
+                    });
+                    result.append(&mut flattened_children);
+                }
+                _ => {
+                    result.push(NotionBlock {
+                        children: Some(flattened_children),
+                        ..block
+                    });
                 }
             }
-            _ => {
-                result.push(self.clone());
-            }
+        } else {
+            result.push(block);
         }
-        result
     }
-
-    fn flatten_recursive(&mut self) {}
+    result
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
