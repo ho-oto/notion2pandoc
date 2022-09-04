@@ -2,7 +2,7 @@ use async_recursion::async_recursion;
 use chrono::{DateTime, Local};
 use futures::future::join_all;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
 static NOTION_API_VERSION: &str = "2022-06-28";
@@ -23,9 +23,14 @@ async fn main() {
 }
 
 async fn fetch_page(id: String, secret: String) -> Vec<NotionBlock> {
-    let mut x = fetch_children(id, secret).await;
-    join_all(x.iter_mut().map(|x| async { x.fetch_recursive().await })).await;
-    x
+    let mut blocks = fetch_children(id, secret).await;
+    join_all(
+        blocks
+            .iter_mut()
+            .map(|x| async { x.fetch_recursive().await }),
+    )
+    .await;
+    blocks
 }
 
 #[derive(Deserialize)]
@@ -50,7 +55,7 @@ async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
             .query(&params)
             .header("Authorization", format!("Bearer {}", secret))
             .header("Notion-Version", NOTION_API_VERSION);
-        let mut page = client
+        let page = client
             .send()
             .await
             .unwrap_or_else(|_| panic!("failed to fetch children blocks of {}", id))
@@ -59,17 +64,26 @@ async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
             .unwrap_or_else(|_| panic!("failed to deserialize children blocks of {}", id));
         next_cursor = page.next_cursor;
         has_more = page.has_more;
-        blocks.append(&mut page.results);
+        blocks.extend(page.results.into_iter().filter(|x| !x.archived));
     }
     blocks
 }
 
+fn deserialize_children<'de, D>(deserializer: D) -> Result<Option<Vec<NotionBlock>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(if bool::deserialize(deserializer)? {
+        Some(Vec::<NotionBlock>::new())
+    } else {
+        None
+    })
+}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct NotionBlock {
     id: Uuid,
     archived: bool,
-    has_children: bool,
-    #[serde(skip)]
+    #[serde(deserialize_with = "deserialize_children", rename = "has_children")]
     children: Option<Vec<NotionBlock>>,
     #[serde(flatten)]
     variant: NotionBlockVariant,
@@ -104,10 +118,12 @@ enum NotionBlockVariant {
     NumberedListItem {
         numbered_list_item: InlineContent,
     },
-    ToDo {
+    #[serde(rename = "to_do")]
+    ToDoListItem {
         to_do: ToDoContent,
     },
-    Toggle {
+    #[serde(rename = "toggle")]
+    ToggleListItem {
         toggle: InlineContent,
     },
     Code {
@@ -160,17 +176,16 @@ enum NotionBlockVariant {
 impl NotionBlock {
     #[async_recursion]
     async fn fetch_recursive(&mut self) {
-        if !self.has_children {
-            return;
+        if let Some(_) = self.children {
+            let mut children = fetch_children(self.id.to_string(), SECRET.to_string()).await;
+            join_all(
+                children
+                    .iter_mut()
+                    .map(|x| async { x.fetch_recursive().await }),
+            )
+            .await;
+            self.children = Some(children);
         }
-        let mut children = fetch_children(self.id.to_string(), SECRET.to_string()).await;
-        join_all(
-            children
-                .iter_mut()
-                .map(|x| async { x.fetch_recursive().await }),
-        )
-        .await;
-        self.children = Some(children);
     }
 }
 
@@ -182,7 +197,6 @@ fn flatten(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
             match block.variant {
                 NotionBlockVariant::Paragraph { paragraph: _ } => {
                     result.push(NotionBlock {
-                        has_children: false,
                         children: None,
                         ..block
                     });
