@@ -12,22 +12,22 @@ static SECRET: &str = "secret_zzz";
 async fn main() {
     println!(
         "{:#?}",
-        flatten(
+        join_list_block(flatten(
             fetch_page(
-                "c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
-                SECRET.to_string()
+                &"c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
+                &SECRET.to_string()
             )
             .await
-        )
+        ))
     )
 }
 
-async fn fetch_page(id: String, secret: String) -> Vec<NotionBlock> {
+async fn fetch_page(id: &String, secret: &String) -> Vec<NotionBlock> {
     let mut blocks = fetch_children(id, secret).await;
     join_all(
         blocks
             .iter_mut()
-            .map(|x| async { x.fetch_recursive().await }),
+            .map(|x| async { x.fetch_recursive(secret).await }),
     )
     .await;
     blocks
@@ -39,7 +39,7 @@ struct NotionResponse {
     next_cursor: Option<String>,
     results: Vec<NotionBlock>,
 }
-async fn fetch_children(id: String, secret: String) -> Vec<NotionBlock> {
+async fn fetch_children(id: &String, secret: &String) -> Vec<NotionBlock> {
     let mut blocks = Vec::<NotionBlock>::new();
     let mut has_more = true;
     let mut next_cursor = None;
@@ -83,10 +83,10 @@ where
 struct NotionBlock {
     id: Uuid,
     archived: bool,
-    #[serde(deserialize_with = "deserialize_children", rename = "has_children")]
-    children: Option<Vec<NotionBlock>>,
     #[serde(flatten)]
     variant: NotionBlockVariant,
+    #[serde(deserialize_with = "deserialize_children", rename = "has_children")]
+    children: Option<Vec<NotionBlock>>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -126,6 +126,10 @@ enum NotionBlockVariant {
     ToggleListItem {
         toggle: InlineContent,
     },
+    #[serde(skip)]
+    BulletedList,
+    #[serde(skip)]
+    NumberedList,
     Code {
         code: CodeContent,
     },
@@ -175,13 +179,13 @@ enum NotionBlockVariant {
 }
 impl NotionBlock {
     #[async_recursion]
-    async fn fetch_recursive(&mut self) {
+    async fn fetch_recursive(&mut self, secret: &String) {
         if let Some(_) = self.children {
-            let mut children = fetch_children(self.id.to_string(), SECRET.to_string()).await;
+            let mut children = fetch_children(&self.id.to_string(), secret).await;
             join_all(
                 children
                     .iter_mut()
-                    .map(|x| async { x.fetch_recursive().await }),
+                    .map(|x| async { x.fetch_recursive(secret).await }),
             )
             .await;
             self.children = Some(children);
@@ -212,6 +216,66 @@ fn flatten(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
         } else {
             result.push(block);
         }
+    }
+    result
+}
+
+fn join_list_block(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
+    use NotionBlockVariant::*;
+    let mut result = Vec::<NotionBlock>::new();
+    for mut block in blocks {
+        block.children = block.children.map(|x| join_list_block(x));
+        match (result.last().map(|x| &x.variant), &block.variant) {
+            (
+                Some(BulletedList),
+                BulletedListItem {
+                    bulleted_list_item: _,
+                }
+                | ToggleListItem { toggle: _ }
+                | ToDoListItem { to_do: _ },
+            )
+            | (
+                Some(NumberedList),
+                NumberedListItem {
+                    numbered_list_item: _,
+                },
+            ) => {
+                result
+                    .last_mut()
+                    .unwrap()
+                    .children
+                    .as_mut()
+                    .unwrap()
+                    .push(block);
+            }
+            (
+                _,
+                BulletedListItem {
+                    bulleted_list_item: _,
+                }
+                | ToggleListItem { toggle: _ }
+                | ToDoListItem { to_do: _ },
+            ) => result.push(NotionBlock {
+                id: block.id,
+                archived: false,
+                children: Some(vec![block]),
+                variant: BulletedList,
+            }),
+            (
+                _,
+                NumberedListItem {
+                    numbered_list_item: _,
+                },
+            ) => result.push(NotionBlock {
+                id: block.id,
+                archived: false,
+                children: Some(vec![block]),
+                variant: NumberedList,
+            }),
+            _ => {
+                result.push(block);
+            }
+        };
     }
     result
 }
