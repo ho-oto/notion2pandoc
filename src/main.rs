@@ -19,6 +19,9 @@ async fn main() {
             )
             .await
         ))
+        .into_iter()
+        .map(convert_block)
+        .collect::<Vec<Block>>()
     )
 }
 
@@ -438,7 +441,7 @@ enum Block {
         Vec<Vec<TableCell>>,
     ),
     // Div,
-    // Null,
+    Null,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
@@ -496,7 +499,7 @@ enum ListNumberDelim {
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct Format(String);
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 struct Attr(String, Vec<String>, Vec<(String, String)>);
 #[derive(Debug, Serialize, Deserialize)]
 struct Target(String, String);
@@ -508,4 +511,233 @@ enum MathType {
     #[default]
     DisplayMath,
     InlineMath,
+}
+
+fn convert_block(block: NotionBlock) -> Block {
+    match block.variant {
+        NotionBlockVariant::Paragraph { paragraph } => {
+            Block::Para(paragraph.rich_text.into_iter().map(convert_rich).collect())
+        }
+        NotionBlockVariant::Heading1 { heading_1 } => Block::Header(
+            1,
+            Attr::default(),
+            heading_1.rich_text.into_iter().map(convert_rich).collect(),
+        ),
+        NotionBlockVariant::Heading2 { heading_2 } => Block::Header(
+            2,
+            Attr::default(),
+            heading_2.rich_text.into_iter().map(convert_rich).collect(),
+        ),
+        NotionBlockVariant::Heading3 { heading_3 } => Block::Header(
+            3,
+            Attr::default(),
+            heading_3.rich_text.into_iter().map(convert_rich).collect(),
+        ),
+        NotionBlockVariant::Callout { callout: _ } => Block::Null, //TODO
+        NotionBlockVariant::Quote { quote } => {
+            let mut elms = vec![Block::Plain(
+                quote.rich_text.into_iter().map(convert_rich).collect(),
+            )];
+            if let Some(children) = block.children {
+                elms.extend(children.into_iter().map(convert_block));
+            }
+            Block::BlockQuote(elms)
+        }
+        NotionBlockVariant::BulletedListItem {
+            bulleted_list_item: _,
+        } => unreachable!(),
+        NotionBlockVariant::NumberedListItem {
+            numbered_list_item: _,
+        } => unreachable!(),
+        NotionBlockVariant::ToDoListItem { to_do: _ } => unreachable!(),
+        NotionBlockVariant::ToggleListItem { toggle: _ } => unreachable!(),
+        NotionBlockVariant::BulletedList => Block::BulletList(
+            block
+                .children
+                .unwrap()
+                .into_iter()
+                .map(convert_list_item)
+                .collect(),
+        ),
+        NotionBlockVariant::NumberedList => Block::OrderedList(
+            ListAttributes(1, ListNumberStyle::Decimal, ListNumberDelim::Period),
+            block
+                .children
+                .unwrap()
+                .into_iter()
+                .map(convert_list_item)
+                .collect(),
+        ),
+        NotionBlockVariant::Code { code } => {
+            assert!(code.rich_text.len() == 1);
+            let text = match code.rich_text.first() {
+                Some(NotionRichText::Text {
+                    annotations: _,
+                    text,
+                }) => text.content.clone(),
+                _ => unreachable!(),
+            };
+            Block::CodeBlock(
+                Attr(
+                    "".to_string(),
+                    vec![code.language],
+                    Vec::<(String, String)>::new(),
+                ),
+                text,
+            )
+        }
+        NotionBlockVariant::Image { image: file } => {
+            let (caption, url) = match file {
+                FileContent::File { caption, file } => (caption, file.url),
+                FileContent::External { caption, external } => (caption, external.url),
+            };
+            let caption = caption.into_iter().map(convert_rich).collect();
+            Block::Para(vec![Inline::Image(caption, Target(url, "".to_string()))])
+        }
+        NotionBlockVariant::Embed { embed } => Block::Para(vec![Inline::Link(
+            embed.caption.into_iter().map(convert_rich).collect(),
+            Target(embed.url, "".to_string()),
+        )]),
+        NotionBlockVariant::File { file }
+        | NotionBlockVariant::Video { video: file }
+        | NotionBlockVariant::PDF { pdf: file } => {
+            let (caption, url) = match file {
+                FileContent::File { caption, file } => (caption, file.url),
+                FileContent::External { caption, external } => (caption, external.url),
+            };
+            let caption = caption.into_iter().map(convert_rich).collect();
+            Block::Para(vec![Inline::Link(caption, Target(url, "".to_string()))])
+        }
+        NotionBlockVariant::Equation { equation } => Block::Para(vec![Inline::Math(
+            MathType::DisplayMath,
+            equation.expression,
+        )]),
+        NotionBlockVariant::Divider => Block::HorizontalRule,
+        NotionBlockVariant::TableOfContents => Block::Null,
+        NotionBlockVariant::LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
+            vec![Inline::Str(link_preview.url.clone())],
+            Target(link_preview.url, "".to_string()),
+        )]),
+        NotionBlockVariant::LinkToPage { link_to_page: _ } => Block::Null, //TODO
+        NotionBlockVariant::Table { table } => Block::Null,                // TODO
+        NotionBlockVariant::TableRow { table_row: _ } => unreachable!(),
+        _ => Block::Null,
+    }
+}
+
+fn convert_list_item(x: NotionBlock) -> Vec<Block> {
+    match x.variant {
+        NotionBlockVariant::BulletedListItem {
+            bulleted_list_item: variant,
+        }
+        | NotionBlockVariant::NumberedListItem {
+            numbered_list_item: variant,
+        }
+        | NotionBlockVariant::ToggleListItem { toggle: variant } => {
+            let mut result = vec![Block::Plain(
+                variant
+                    .rich_text
+                    .into_iter()
+                    .map(|r| convert_rich(r))
+                    .collect(),
+            )];
+            if let Some(children) = x.children {
+                result.extend(children.into_iter().map(|b| convert_block(b)));
+            }
+            result
+        }
+        NotionBlockVariant::ToDoListItem { to_do } => {
+            let check_mark = if to_do.checked {
+                "☑".to_string()
+            } else {
+                "☐".to_string()
+            };
+            let mut text_with_box = vec![Inline::Str(check_mark), Inline::Space];
+            text_with_box.extend(to_do.rich_text.into_iter().map(|r| convert_rich(r)));
+            let mut result = vec![Block::Plain(text_with_box)];
+            if let Some(children) = x.children {
+                result.extend(children.into_iter().map(|b| convert_block(b)));
+            }
+            result
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn convert_rich(x: NotionRichText) -> Inline {
+    match x {
+        NotionRichText::Text { annotations, text } => {
+            if let Some(link) = text.link {
+                Inline::Link(
+                    vec![convert_rich(NotionRichText::Text {
+                        annotations,
+                        text: TextContent { link: None, ..text },
+                    })],
+                    Target(link.url, "".to_string()),
+                )
+            } else {
+                if annotations.bold {
+                    Inline::Strong(vec![convert_rich(NotionRichText::Text {
+                        annotations: NotionAnnotations {
+                            bold: false,
+                            ..annotations
+                        },
+                        text,
+                    })])
+                } else if annotations.italic {
+                    Inline::Strong(vec![convert_rich(NotionRichText::Text {
+                        annotations: NotionAnnotations {
+                            italic: false,
+                            ..annotations
+                        },
+                        text,
+                    })]) //TODO: fix
+                } else if annotations.strikethrough {
+                    Inline::Strikeout(vec![convert_rich(NotionRichText::Text {
+                        annotations: NotionAnnotations {
+                            strikethrough: false,
+                            ..annotations
+                        },
+                        text,
+                    })])
+                } else if annotations.underline {
+                    Inline::Emph(vec![convert_rich(NotionRichText::Text {
+                        annotations: NotionAnnotations {
+                            underline: false,
+                            ..annotations
+                        },
+                        text,
+                    })])
+                } else if annotations.code {
+                    Inline::Code(
+                        Attr::default(),
+                        vec![convert_rich(NotionRichText::Text {
+                            annotations: NotionAnnotations {
+                                code: false,
+                                ..annotations
+                            },
+                            text,
+                        })],
+                    )
+                } else {
+                    Inline::Str(text.content)
+                }
+            }
+        }
+        NotionRichText::Mention {
+            plain_text,
+            annotations,
+            mention: _,
+        } => convert_rich(NotionRichText::Text {
+            annotations,
+            text: TextContent {
+                content: plain_text,
+                link: None,
+            },
+        }),
+        NotionRichText::Equation {
+            annotations, // TODO: support annotation
+            equation,
+        } => Inline::Math(MathType::InlineMath, equation.expression),
+    }
 }
