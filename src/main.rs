@@ -538,14 +538,16 @@ impl NotionBlock {
             Heading3 { heading_3 } => Block::Header(3, Attr::default(), heading_3.to_pandoc()),
             Callout { callout: _ } => Block::Null, //TODO
             Quote { quote } => Block::BlockQuote(quote.to_pandoc_with_children(self.children)),
+            // {Bulleted,Numbered,ToDo,Toggle}ListItem should be
+            // in a children of BulletedList/NumberedList node
             BulletedListItem {
                 bulleted_list_item: _,
-            } => unreachable!(),
-            NumberedListItem {
+            }
+            | NumberedListItem {
                 numbered_list_item: _,
-            } => unreachable!(),
-            ToDoListItem { to_do: _ } => unreachable!(),
-            ToggleListItem { toggle: _ } => unreachable!(),
+            }
+            | ToDoListItem { to_do: _ }
+            | ToggleListItem { toggle: _ } => unreachable!(),
             BulletedList => Block::BulletList(
                 self.children
                     .unwrap()
@@ -570,7 +572,7 @@ impl NotionBlock {
                     }) => text.content.clone(),
                     _ => unreachable!(),
                 };
-                Block::CodeBlock(Attr("".to_string(), vec![code.language], vec![]), text)
+                Block::CodeBlock(Attr(String::new(), vec![code.language], vec![]), text)
             }
             Image { image: file } => {
                 let (caption, url) = match file {
@@ -578,20 +580,20 @@ impl NotionBlock {
                     FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
-                Block::Para(vec![Inline::Image(caption, Target(url, "".to_string()))])
+                Block::Para(vec![Inline::Image(caption, Target(url, String::new()))])
             }
-            Embed { embed } => Block::Para(vec![Inline::Link(
-                embed.caption.into_iter().map(|r| r.to_pandoc()).collect(),
-                Target(embed.url, "".to_string()),
-            )]),
             File { file } | Video { video: file } | PDF { pdf: file } => {
                 let (caption, url) = match file {
                     FileContent::File { caption, file } => (caption, file.url),
                     FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
-                Block::Para(vec![Inline::Link(caption, Target(url, "".to_string()))])
+                Block::Para(vec![Inline::Link(caption, Target(url, String::new()))])
             }
+            Embed { embed } => Block::Para(vec![Inline::Link(
+                embed.caption.into_iter().map(|r| r.to_pandoc()).collect(),
+                Target(embed.url, String::new()),
+            )]),
             Equation { equation } => Block::Para(vec![Inline::Math(
                 MathType::DisplayMath,
                 equation.expression,
@@ -600,7 +602,7 @@ impl NotionBlock {
             TableOfContents => Block::Null,
             LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
                 vec![Inline::Str(link_preview.url.clone())],
-                Target(link_preview.url, "".to_string()),
+                Target(link_preview.url, String::new()),
             )]),
             LinkToPage { link_to_page: _ } => Block::Null, //TODO
             Table { table } => Block::Null,                // TODO
@@ -643,84 +645,58 @@ impl NotionRichText {
         match self {
             NotionRichText::Text { annotations, text } => {
                 if let Some(link) = text.link {
-                    Inline::Link(
-                        vec![NotionRichText::Text {
-                            annotations,
-                            text: TextContent { link: None, ..text },
-                        }
-                        .to_pandoc()],
-                        Target(link.url, "".to_string()),
-                    )
+                    let trg = Target(link.url, String::new());
+                    let str = NotionRichText::Text {
+                        annotations,
+                        text: TextContent { link: None, ..text },
+                    };
+                    Inline::Link(vec![str.to_pandoc()], trg)
                 } else {
+                    let mut str = Inline::Str(text.content);
                     if annotations.bold {
-                        Inline::Strong(vec![NotionRichText::Text {
-                            annotations: NotionAnnotations {
-                                bold: false,
-                                ..annotations
-                            },
-                            text,
-                        }
-                        .to_pandoc()])
-                    } else if annotations.italic {
-                        Inline::Strong(vec![NotionRichText::Text {
-                            annotations: NotionAnnotations {
-                                italic: false,
-                                ..annotations
-                            },
-                            text,
-                        }
-                        .to_pandoc()]) //TODO: fix
-                    } else if annotations.strikethrough {
-                        Inline::Strikeout(vec![NotionRichText::Text {
-                            annotations: NotionAnnotations {
-                                strikethrough: false,
-                                ..annotations
-                            },
-                            text,
-                        }
-                        .to_pandoc()])
-                    } else if annotations.underline {
-                        Inline::Emph(vec![NotionRichText::Text {
-                            annotations: NotionAnnotations {
-                                underline: false,
-                                ..annotations
-                            },
-                            text,
-                        }
-                        .to_pandoc()])
-                    } else if annotations.code {
-                        Inline::Code(
-                            Attr::default(),
-                            vec![NotionRichText::Text {
-                                annotations: NotionAnnotations {
-                                    code: false,
-                                    ..annotations
-                                },
-                                text,
-                            }
-                            .to_pandoc()],
-                        )
-                    } else {
-                        Inline::Str(text.content)
+                        str = Inline::Strong(vec![str]);
                     }
+                    if annotations.italic || annotations.underline {
+                        str = Inline::Strong(vec![str]);
+                    }
+                    if annotations.strikethrough {
+                        str = Inline::Strikeout(vec![str]);
+                    }
+                    if annotations.code {
+                        str = Inline::Code(Attr::default(), vec![str]);
+                    }
+                    str
                 }
             }
             NotionRichText::Mention {
                 plain_text,
                 annotations,
                 mention: _,
-            } => NotionRichText::Text {
-                annotations,
-                text: TextContent {
-                    content: plain_text,
-                    link: None,
-                },
-            }
-            .to_pandoc(),
+            } => Self::annotate(Inline::Str(plain_text), annotations),
             NotionRichText::Equation {
-                annotations, // TODO: support annotation
+                annotations,
                 equation,
-            } => Inline::Math(MathType::InlineMath, equation.expression),
+            } => Self::annotate(
+                Inline::Math(MathType::InlineMath, equation.expression),
+                annotations,
+            ),
         }
+    }
+
+    fn annotate(inline: Inline, annotations: NotionAnnotations) -> Inline {
+        let mut result = inline;
+        if annotations.bold {
+            result = Inline::Strong(vec![result]);
+        }
+        if annotations.italic || annotations.underline {
+            result = Inline::Strong(vec![result]);
+        }
+        if annotations.strikethrough {
+            result = Inline::Strikeout(vec![result]);
+        }
+        if annotations.code {
+            result = Inline::Code(Attr::default(), vec![result]);
+        }
+        result
     }
 }
