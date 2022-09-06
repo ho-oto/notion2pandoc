@@ -519,45 +519,41 @@ impl InlineContent {
     fn to_pandoc(self) -> Vec<Inline> {
         self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
     }
+    fn to_pandoc_with_children(self, children: Option<Vec<NotionBlock>>) -> Vec<Block> {
+        let mut result = vec![Block::Plain(self.to_pandoc())];
+        if let Some(children) = children {
+            result.extend(children.into_iter().map(|b| b.to_pandoc()));
+        }
+        result
+    }
 }
 
 impl NotionBlock {
     fn to_pandoc(self) -> Block {
+        use NotionBlockVariant::*;
         match self.variant {
-            NotionBlockVariant::Paragraph { paragraph } => Block::Para(paragraph.to_pandoc()),
-            NotionBlockVariant::Heading1 { heading_1 } => {
-                Block::Header(1, Attr::default(), heading_1.to_pandoc())
-            }
-            NotionBlockVariant::Heading2 { heading_2 } => {
-                Block::Header(2, Attr::default(), heading_2.to_pandoc())
-            }
-            NotionBlockVariant::Heading3 { heading_3 } => {
-                Block::Header(3, Attr::default(), heading_3.to_pandoc())
-            }
-            NotionBlockVariant::Callout { callout: _ } => Block::Null, //TODO
-            NotionBlockVariant::Quote { quote } => {
-                let mut elms = vec![Block::Plain(quote.to_pandoc())];
-                if let Some(children) = self.children {
-                    elms.extend(children.into_iter().map(|b| b.to_pandoc()));
-                }
-                Block::BlockQuote(elms)
-            }
-            NotionBlockVariant::BulletedListItem {
+            Paragraph { paragraph } => Block::Para(paragraph.to_pandoc()),
+            Heading1 { heading_1 } => Block::Header(1, Attr::default(), heading_1.to_pandoc()),
+            Heading2 { heading_2 } => Block::Header(2, Attr::default(), heading_2.to_pandoc()),
+            Heading3 { heading_3 } => Block::Header(3, Attr::default(), heading_3.to_pandoc()),
+            Callout { callout: _ } => Block::Null, //TODO
+            Quote { quote } => Block::BlockQuote(quote.to_pandoc_with_children(self.children)),
+            BulletedListItem {
                 bulleted_list_item: _,
             } => unreachable!(),
-            NotionBlockVariant::NumberedListItem {
+            NumberedListItem {
                 numbered_list_item: _,
             } => unreachable!(),
-            NotionBlockVariant::ToDoListItem { to_do: _ } => unreachable!(),
-            NotionBlockVariant::ToggleListItem { toggle: _ } => unreachable!(),
-            NotionBlockVariant::BulletedList => Block::BulletList(
+            ToDoListItem { to_do: _ } => unreachable!(),
+            ToggleListItem { toggle: _ } => unreachable!(),
+            BulletedList => Block::BulletList(
                 self.children
                     .unwrap()
                     .into_iter()
                     .map(Self::convert_list_item)
                     .collect(),
             ),
-            NotionBlockVariant::NumberedList => Block::OrderedList(
+            NumberedList => Block::OrderedList(
                 ListAttributes(1, ListNumberStyle::Decimal, ListNumberDelim::Period),
                 self.children
                     .unwrap()
@@ -565,7 +561,7 @@ impl NotionBlock {
                     .map(Self::convert_list_item)
                     .collect(),
             ),
-            NotionBlockVariant::Code { code } => {
+            Code { code } => {
                 assert!(code.rich_text.len() == 1);
                 let text = match code.rich_text.first() {
                     Some(NotionRichText::Text {
@@ -574,16 +570,9 @@ impl NotionBlock {
                     }) => text.content.clone(),
                     _ => unreachable!(),
                 };
-                Block::CodeBlock(
-                    Attr(
-                        "".to_string(),
-                        vec![code.language],
-                        Vec::<(String, String)>::new(),
-                    ),
-                    text,
-                )
+                Block::CodeBlock(Attr("".to_string(), vec![code.language], vec![]), text)
             }
-            NotionBlockVariant::Image { image: file } => {
+            Image { image: file } => {
                 let (caption, url) = match file {
                     FileContent::File { caption, file } => (caption, file.url),
                     FileContent::External { caption, external } => (caption, external.url),
@@ -591,13 +580,11 @@ impl NotionBlock {
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
                 Block::Para(vec![Inline::Image(caption, Target(url, "".to_string()))])
             }
-            NotionBlockVariant::Embed { embed } => Block::Para(vec![Inline::Link(
+            Embed { embed } => Block::Para(vec![Inline::Link(
                 embed.caption.into_iter().map(|r| r.to_pandoc()).collect(),
                 Target(embed.url, "".to_string()),
             )]),
-            NotionBlockVariant::File { file }
-            | NotionBlockVariant::Video { video: file }
-            | NotionBlockVariant::PDF { pdf: file } => {
+            File { file } | Video { video: file } | PDF { pdf: file } => {
                 let (caption, url) = match file {
                     FileContent::File { caption, file } => (caption, file.url),
                     FileContent::External { caption, external } => (caption, external.url),
@@ -605,45 +592,34 @@ impl NotionBlock {
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
                 Block::Para(vec![Inline::Link(caption, Target(url, "".to_string()))])
             }
-            NotionBlockVariant::Equation { equation } => Block::Para(vec![Inline::Math(
+            Equation { equation } => Block::Para(vec![Inline::Math(
                 MathType::DisplayMath,
                 equation.expression,
             )]),
-            NotionBlockVariant::Divider => Block::HorizontalRule,
-            NotionBlockVariant::TableOfContents => Block::Null,
-            NotionBlockVariant::LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
+            Divider => Block::HorizontalRule,
+            TableOfContents => Block::Null,
+            LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
                 vec![Inline::Str(link_preview.url.clone())],
                 Target(link_preview.url, "".to_string()),
             )]),
-            NotionBlockVariant::LinkToPage { link_to_page: _ } => Block::Null, //TODO
-            NotionBlockVariant::Table { table } => Block::Null,                // TODO
-            NotionBlockVariant::TableRow { table_row: _ } => unreachable!(),
+            LinkToPage { link_to_page: _ } => Block::Null, //TODO
+            Table { table } => Block::Null,                // TODO
+            TableRow { table_row: _ } => unreachable!(),
             _ => Block::Null,
         }
     }
 
     fn convert_list_item(x: NotionBlock) -> Vec<Block> {
+        use NotionBlockVariant::*;
         match x.variant {
-            NotionBlockVariant::BulletedListItem {
+            BulletedListItem {
                 bulleted_list_item: variant,
             }
-            | NotionBlockVariant::NumberedListItem {
+            | NumberedListItem {
                 numbered_list_item: variant,
             }
-            | NotionBlockVariant::ToggleListItem { toggle: variant } => {
-                let mut result = vec![Block::Plain(
-                    variant
-                        .rich_text
-                        .into_iter()
-                        .map(|r| r.to_pandoc())
-                        .collect(),
-                )];
-                if let Some(children) = x.children {
-                    result.extend(children.into_iter().map(|b| b.to_pandoc()));
-                }
-                result
-            }
-            NotionBlockVariant::ToDoListItem { to_do } => {
+            | ToggleListItem { toggle: variant } => variant.to_pandoc_with_children(x.children),
+            ToDoListItem { to_do } => {
                 let check_mark = if to_do.checked {
                     "☑".to_string()
                 } else {
