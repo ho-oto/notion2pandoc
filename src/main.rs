@@ -10,19 +10,21 @@ static SECRET: &str = "secret_zzz";
 
 #[tokio::main]
 async fn main() {
-    println!(
-        "{:#?}",
-        join_list_block(flatten(
+    let rsl = Pandoc {
+        pandoc_api_version: [1, 22, 2, 1],
+        meta: Meta {},
+        blocks: join_list_block(flatten(
             fetch_page(
                 &"c90565cf4ae64e3dbfdbb9140b1f8b04".to_string(),
-                &SECRET.to_string()
+                &SECRET.to_string(),
             )
-            .await
+            .await,
         ))
         .into_iter()
         .map(convert_block)
-        .collect::<Vec<Block>>()
-    )
+        .collect::<Vec<Block>>(),
+    };
+    println!("{}", serde_json::to_string(&rsl).unwrap())
 }
 
 async fn fetch_page(id: &String, secret: &String) -> Vec<NotionBlock> {
