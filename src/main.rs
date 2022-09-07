@@ -7,6 +7,7 @@ use uuid::{uuid, Uuid};
 
 static NOTION_API_VERSION: &str = "2022-06-28";
 static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
+
 static SECRET: &str = "secret_zzz";
 
 #[tokio::main]
@@ -473,8 +474,8 @@ enum Inline {
     LineBreak,
     Math(MathType, String),
     // RawInline,
-    Link(Vec<Inline>, Target),
-    Image(Vec<Inline>, Target),
+    Link(Attr, Vec<Inline>, Target),
+    Image(Attr, Vec<Inline>, Target),
     Note(Vec<Block>),
     Span(Attr, Vec<Inline>),
 }
@@ -591,7 +592,11 @@ impl NotionBlock {
                     FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
-                Block::Para(vec![Inline::Image(caption, Target(url, String::new()))])
+                Block::Para(vec![Inline::Image(
+                    Attr::default(),
+                    caption,
+                    Target(url, String::new()),
+                )])
             }
             File { file } | Video { video: file } | PDF { pdf: file } => {
                 let (caption, url) = match file {
@@ -599,9 +604,14 @@ impl NotionBlock {
                     FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
-                Block::Para(vec![Inline::Link(caption, Target(url, String::new()))])
+                Block::Para(vec![Inline::Link(
+                    Attr::default(),
+                    caption,
+                    Target(url, String::new()),
+                )])
             }
             Embed { embed } => Block::Para(vec![Inline::Link(
+                Attr::default(),
                 embed.caption.into_iter().map(|r| r.to_pandoc()).collect(),
                 Target(embed.url, String::new()),
             )]),
@@ -612,6 +622,7 @@ impl NotionBlock {
             Divider => Block::HorizontalRule,
             TableOfContents => Block::Null,
             LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
+                Attr::default(),
                 vec![Inline::Str(link_preview.url.clone())],
                 Target(link_preview.url, String::new()),
             )]),
@@ -661,7 +672,7 @@ impl NotionRichText {
                         annotations,
                         text: TextContent { link: None, ..text },
                     };
-                    Inline::Link(vec![str.to_pandoc()], trg)
+                    Inline::Link(Attr::default(), vec![str.to_pandoc()], trg)
                 } else {
                     let mut str = Inline::Str(text.content);
                     if annotations.bold {
