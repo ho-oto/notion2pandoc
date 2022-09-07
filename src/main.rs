@@ -20,11 +20,7 @@ async fn main() {
     let rsl = Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: Meta {},
-        blocks: page
-            .blocks
-            .into_iter()
-            .map(|b| b.to_pandoc())
-            .collect::<Vec<Block>>(),
+        blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
     };
     println!("{}", serde_json::to_string(&rsl).unwrap())
 }
