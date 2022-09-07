@@ -3,17 +3,20 @@ use chrono::{DateTime, Local};
 use futures::future::join_all;
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize};
-use uuid::{uuid, Uuid};
+use uuid::Uuid;
 
+use std::env;
+
+/// https://developers.notion.com/reference/intro
 static NOTION_API_VERSION: &str = "2022-06-28";
+/// https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
 static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
-
-static SECRET: &str = "secret_zzz";
 
 #[tokio::main]
 async fn main() {
-    let mut page = NotionPage::new(uuid!("c90565cf4ae64e3dbfdbb9140b1f8b04"));
-    page.fetch(&SECRET.to_string()).await;
+    let args: Vec<String> = env::args().collect();
+    let mut page = NotionPage::new(Uuid::parse_str(&args[1]).unwrap());
+    page.fetch(&args[2]).await;
     let rsl = Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: Meta {},
@@ -439,22 +442,24 @@ struct Meta {}
 enum Block {
     Plain(Vec<Inline>),
     Para(Vec<Inline>),
+    // LineBlock(Vec<Vec<Inline>>),
     CodeBlock(Attr, String),
-    // RawBlock,
+    // RawBlock(Format, Text),
     BlockQuote(Vec<Block>),
     OrderedList(ListAttributes, Vec<Vec<Block>>),
     BulletList(Vec<Vec<Block>>),
-    // DefinitionList,
+    // DefinitionList(Vec<(Vec<Inline>,Vec<Vec<Block>>)>),
     Header(u64, Attr, Vec<Inline>),
     HorizontalRule,
-    Table(
-        Vec<Inline>,
-        Vec<Alignment>,
-        Vec<f64>,
-        Vec<TableCell>,
-        Vec<Vec<TableCell>>,
-    ),
-    // Div,
+    // Table( // TODO:
+    //     Attr,
+    //     Caption,
+    //     Vec<ColSpec>,
+    //     TableHead,
+    //     Vec<TableBody>,
+    //     TableFoot,
+    // ),
+    Div(Attr, Vec<Block>),
     Null,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -469,11 +474,12 @@ enum Inline {
     // SmallCaps,
     // Quoted(QuoteType, Vec<Inline>),
     // Cite(Vec<Citation>, Vec<Inline>),
-    Code(Attr, Vec<Inline>),
+    Code(Attr, String),
     Space,
+    // SoftBreak,
     LineBreak,
     Math(MathType, String),
-    // RawInline,
+    // RawInline(Format, String),
     Link(Attr, Vec<Inline>, Target),
     Image(Attr, Vec<Inline>, Target),
     Note(Vec<Block>),
@@ -674,20 +680,12 @@ impl NotionRichText {
                     };
                     Inline::Link(Attr::default(), vec![str.to_pandoc()], trg)
                 } else {
-                    let mut str = Inline::Str(text.content);
-                    if annotations.bold {
-                        str = Inline::Strong(vec![str]);
-                    }
-                    if annotations.italic || annotations.underline {
-                        str = Inline::Strong(vec![str]);
-                    }
-                    if annotations.strikethrough {
-                        str = Inline::Strikeout(vec![str]);
-                    }
-                    if annotations.code {
-                        str = Inline::Code(Attr::default(), vec![str]);
-                    }
-                    str
+                    let inline = if annotations.code {
+                        Inline::Code(Attr::default(), text.content)
+                    } else {
+                        Inline::Str(text.content)
+                    };
+                    Self::annotate(inline, annotations)
                 }
             }
             NotionRichText::Mention {
@@ -715,9 +713,6 @@ impl NotionRichText {
         }
         if annotations.strikethrough {
             result = Inline::Strikeout(vec![result]);
-        }
-        if annotations.code {
-            result = Inline::Code(Attr::default(), vec![result]);
         }
         result
     }
