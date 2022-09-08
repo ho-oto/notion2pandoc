@@ -476,6 +476,11 @@ enum Inline {
     Note(Vec<Block>),
     Span(Attr, Vec<Inline>),
 }
+impl Inline {
+    fn to_link(self, url: String) -> Self {
+        Self::Link(Attr::default(), vec![self], Target(url, String::new()))
+    }
+}
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 enum Alignment {
@@ -614,11 +619,11 @@ impl NotionBlock {
             )]),
             Divider => Block::HorizontalRule,
             TableOfContents => Block::Null,
-            LinkPreview { link_preview } => Block::Para(vec![Inline::Link(
-                Attr::default(),
-                vec![Inline::Str(link_preview.url.clone())],
-                Target(link_preview.url, String::new()),
-            )]),
+            LinkPreview { link_preview } => {
+                Block::Para(vec![
+                    Inline::Str(link_preview.url.clone()).to_link(link_preview.url)
+                ])
+            }
             LinkToPage { link_to_page: _ } => Block::Null, // TODO:
             Table { table: _ } => Block::Null,             // TODO:
             TableRow { table_row: _ } => unreachable!(),
@@ -652,12 +657,12 @@ impl NotionRichText {
         match self {
             NotionRichText::Text { annotations, text } => {
                 if let Some(link) = text.link {
-                    let trg = Target(link.url, String::new());
-                    let str = NotionRichText::Text {
+                    NotionRichText::Text {
                         annotations,
                         text: TextContent { link: None, ..text },
-                    };
-                    Inline::Link(Attr::default(), vec![str.to_pandoc()], trg)
+                    }
+                    .to_pandoc()
+                    .to_link(link.url)
                 } else {
                     let inline = if annotations.code {
                         Inline::Code(Attr::default(), text.content)
