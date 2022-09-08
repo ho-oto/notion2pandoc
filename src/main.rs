@@ -441,15 +441,14 @@ enum Block {
     // DefinitionList(Vec<(Vec<Inline>,Vec<Vec<Block>>)>),
     Header(u64, Attr, Vec<Inline>),
     HorizontalRule,
-    // TODO:
-    // Table(
-    //     Attr,
-    //     Caption,
-    //     Vec<ColSpec>,
-    //     TableHead,
-    //     Vec<TableBody>,
-    //     TableFoot,
-    // ),
+    Table(
+        Attr,
+        Caption,
+        Vec<ColSpec>,
+        TableHead,
+        Vec<TableBody>,
+        TableFoot,
+    ),
     Div(Attr, Vec<Block>),
     Null,
 }
@@ -460,9 +459,9 @@ enum Inline {
     Emph(Vec<Inline>),
     Strong(Vec<Inline>),
     Strikeout(Vec<Inline>),
-    // Superscript,
-    // Subscript,
-    // SmallCaps,
+    // Superscript(Vec<Inline>),
+    // Subscript(Vec<Inline>),
+    // SmallCaps(Vec<Inline>),
     // Quoted(QuoteType, Vec<Inline>),
     // Cite(Vec<Citation>, Vec<Inline>),
     Code(Attr, String),
@@ -528,6 +527,35 @@ enum MathType {
     DisplayMath,
     InlineMath,
 }
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Caption(Option<ShortCaption>, Vec<Block>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ShortCaption(Vec<Inline>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Row(Attr, Vec<Cell>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ColSpec(Alignment, ColWidth);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RowHeadColumns(u64);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TableHead(Attr, Vec<Row>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TableBody(Attr, RowHeadColumns, Vec<Row>, Vec<Row>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TableFoot(Attr, Vec<Row>);
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(tag = "t", content = "c")]
+enum ColWidth {
+    ColWidth(f64),
+    #[default]
+    ColWidthDefault,
+}
+#[derive(Debug, Serialize, Deserialize)]
+struct Cell(Attr, Alignment, RowSpan, ColSpan, Vec<Block>);
+#[derive(Debug, Serialize, Deserialize)]
+struct RowSpan(u64);
+#[derive(Debug, Serialize, Deserialize)]
+struct ColSpan(u64);
 
 impl InlineContent {
     fn to_pandoc(self) -> Vec<Inline> {
@@ -547,9 +575,9 @@ impl NotionBlock {
         use NotionBlockVariant::*;
         match self.variant {
             Paragraph { inline } => Block::Para(inline.to_pandoc()),
-            Heading1 { inline } => Block::Header(1, Attr::default(), inline.to_pandoc()),
-            Heading2 { inline } => Block::Header(2, Attr::default(), inline.to_pandoc()),
-            Heading3 { inline } => Block::Header(3, Attr::default(), inline.to_pandoc()),
+            Heading1 { inline } => Block::Header(2, Attr::default(), inline.to_pandoc()),
+            Heading2 { inline } => Block::Header(3, Attr::default(), inline.to_pandoc()),
+            Heading3 { inline } => Block::Header(4, Attr::default(), inline.to_pandoc()),
             Callout { callout: _ } => Block::Null, //TODO
             Quote { inline } => Block::BlockQuote(inline.to_pandoc_with_children(self.children)),
             // {Bulleted,Numbered,ToDo,Toggle}ListItem should be
@@ -625,10 +653,62 @@ impl NotionBlock {
                 ])
             }
             LinkToPage { link_to_page: _ } => Block::Null, // TODO:
-            Table { table: _ } => Block::Null,             // TODO:
+            Table { table } => {
+                if let Some(mut children) = self.children {
+                    let header_start = if table.has_column_header { 1 } else { 0 };
+                    let (header, body) = children.split_at_mut(header_start);
+                    let header: Vec<Row> = header
+                        .to_owned()
+                        .into_iter()
+                        .map(Self::convert_table_row)
+                        .collect();
+                    let body: Vec<Row> = body
+                        .to_owned()
+                        .into_iter()
+                        .map(Self::convert_table_row)
+                        .collect();
+                    let col_specs = (0..table.table_width).map(|_| ColSpec::default()).collect();
+                    Block::Table(
+                        Attr::default(),
+                        Caption::default(),
+                        col_specs,
+                        TableHead(Attr::default(), header),
+                        vec![TableBody(Attr::default(), RowHeadColumns(0), vec![], body)],
+                        TableFoot::default(),
+                    )
+                } else {
+                    Block::Null
+                }
+            }
             TableRow { table_row: _ } => unreachable!(),
             _ => Block::Null,
         }
+    }
+
+    fn convert_table_row(x: NotionBlock) -> Row {
+        match x.variant {
+            NotionBlockVariant::TableRow { table_row } => {
+                Self::convert_table_cells(table_row.cells)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn convert_table_cells(x: Vec<Vec<NotionRichText>>) -> Row {
+        Row(
+            Attr::default(),
+            x.into_iter().map(Self::convert_table_cell).collect(),
+        )
+    }
+
+    fn convert_table_cell(x: Vec<NotionRichText>) -> Cell {
+        Cell(
+            Attr::default(),
+            Alignment::default(),
+            RowSpan(1),
+            ColSpan(1),
+            vec![Block::Plain(x.into_iter().map(|r| r.to_pandoc()).collect())],
+        )
     }
 
     fn convert_list_item(x: NotionBlock) -> Vec<Block> {
