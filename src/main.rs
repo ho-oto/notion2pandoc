@@ -2,6 +2,7 @@ use async_recursion::async_recursion;
 use chrono::{DateTime, Local};
 use clap::Parser;
 use futures::future::join_all;
+use itertools::join;
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
@@ -24,12 +25,17 @@ struct Cli {
 async fn main() {
     let args = Cli::parse();
     let id = Uuid::parse_str(&args.id).unwrap_or_else(|_| panic!("ID should be UUID"));
-    let mut page = NotionPage::new(id);
-    page.fetch(&args.cert).await;
+    let page = NotionPage::fetch(id, &args.cert).await;
+    let mut blocks = vec![Block::Header(
+        1,
+        Attr::default(),
+        vec![Inline::Str(page.title)],
+    )];
+    blocks.extend(page.blocks.into_iter().map(|b| b.to_pandoc()));
     let rsl = Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: Meta {},
-        blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
+        blocks,
     };
     println!("{}", serde_json::to_string(&rsl).unwrap())
 }
@@ -71,26 +77,57 @@ async fn fetch_children(id: Uuid, secret: &String) -> Vec<NotionBlock> {
 }
 
 struct NotionPage {
-    id: Uuid,
+    title: String,
     blocks: Vec<NotionBlock>,
 }
 impl NotionPage {
-    fn new(id: Uuid) -> NotionPage {
-        NotionPage {
-            id: id,
-            blocks: vec![],
+    async fn fetch(id: Uuid, secret: &String) -> Self {
+        #[derive(Deserialize)]
+        struct NotionResponse {
+            archived: bool,
+            properties: TitleContent,
         }
-    }
-
-    async fn fetch(&mut self, secret: &String) {
-        let mut blocks = fetch_children(self.id, secret).await;
+        #[derive(Deserialize)]
+        struct TitleContent {
+            title: Title,
+        }
+        #[derive(Deserialize)]
+        struct Title {
+            title: Vec<NotionRichText>,
+        }
+        let url = format!("https://api.notion.com/v1/pages/{}", id);
+        let meta = Client::new()
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", secret))
+            .header("Notion-Version", NOTION_API_VERSION)
+            .send()
+            .await
+            .unwrap_or_else(|_| panic!("failed to fetch page {}", id))
+            .json::<NotionResponse>()
+            .await
+            .unwrap_or_else(|_| panic!("failed to deserialize page {}", id));
+        if meta.archived {
+            panic!("archived page")
+        }
+        let title = join(
+            meta.properties.title.title.into_iter().map(|r| match r {
+                NotionRichText::Text {
+                    annotations: _,
+                    text,
+                } => text.content.clone(),
+                _ => panic!(),
+            }),
+            "",
+        );
+        let mut blocks = fetch_children(id, secret).await;
         join_all(
             blocks
                 .iter_mut()
                 .map(|x| async { x.fetch_recursive(secret).await }),
         )
         .await;
-        self.blocks = Self::join_list_block(Self::flatten(blocks));
+        blocks = Self::join_list_block(Self::flatten(blocks));
+        Self { title, blocks }
     }
 
     fn flatten(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {

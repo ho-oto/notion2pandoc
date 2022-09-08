@@ -3,6 +3,7 @@
         "Callout",
         "chrono",
         "Emph",
+        "itertools",
         "Pandoc",
         "reqwest"
     ],
