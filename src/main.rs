@@ -1,22 +1,30 @@
 use async_recursion::async_recursion;
 use chrono::{DateTime, Local};
+use clap::Parser;
 use futures::future::join_all;
 use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
-
-use std::env;
 
 /// https://developers.notion.com/reference/intro
 static NOTION_API_VERSION: &str = "2022-06-28";
 /// https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
 static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
 
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    #[clap(short = 'i')]
+    id: String,
+    #[clap(short = 'c')]
+    cert: String,
+}
+
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut page = NotionPage::new(Uuid::parse_str(&args[1]).unwrap());
-    page.fetch(&args[2]).await;
+    let args = Cli::parse();
+    let mut page = NotionPage::new(Uuid::parse_str(&args.id).unwrap());
+    page.fetch(&args.cert).await;
     let rsl = Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: Meta {},

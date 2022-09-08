@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "notion2md"
+name = "notion2pandoc"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -8,6 +8,7 @@ version = "0.1.0"
 [dependencies]
 async-recursion = "1.0.0"
 chrono = {version = "0.4.1", features = ["serde"]}
+clap = {version = "3.2.20", features = ["derive"]}
 futures = "0.3.24"
 reqwest = {version = "0.11.11", features = ["json"]}
 serde = {version = "1.0.144", features = ["derive"]}
