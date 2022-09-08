@@ -252,7 +252,7 @@ enum NotionBlockVariant {
         #[serde(rename = "pdf")]
         file: FileContent,
     },
-    // Bookmark,
+    // Bookmark, TODO:
     Equation {
         equation: EquationContent,
     },
@@ -343,15 +343,11 @@ enum FileContent {
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ExternalFileLink {
-    /// Link to the externally hosted content.
     url: String,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct FileLink {
-    /// Authenticated S3 URL to the file. The file URL will be valid for 1 hour
-    /// but updated links can be requested if required.
     url: String,
-    /// Date and time when this will expire. Formatted as an ISO 8601 date time string.
     expiry_time: DateTime<Local>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -445,7 +441,8 @@ enum Block {
     // DefinitionList(Vec<(Vec<Inline>,Vec<Vec<Block>>)>),
     Header(u64, Attr, Vec<Inline>),
     HorizontalRule,
-    // Table( // TODO:
+    // TODO:
+    // Table(
     //     Attr,
     //     Caption,
     //     Vec<ColSpec>,
@@ -622,8 +619,8 @@ impl NotionBlock {
                 vec![Inline::Str(link_preview.url.clone())],
                 Target(link_preview.url, String::new()),
             )]),
-            LinkToPage { link_to_page: _ } => Block::Null, //TODO
-            Table { table } => Block::Null,                // TODO
+            LinkToPage { link_to_page: _ } => Block::Null, // TODO:
+            Table { table: _ } => Block::Null,             // TODO:
             TableRow { table_row: _ } => unreachable!(),
             _ => Block::Null,
         }
@@ -636,11 +633,7 @@ impl NotionBlock {
             | NumberedListItem { inline }
             | ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
             ToDoListItem { to_do } => {
-                let check_mark = if to_do.checked {
-                    "☑".to_string()
-                } else {
-                    "☐".to_string()
-                };
+                let check_mark = format!("{}", if to_do.checked { "☒" } else { "☐" });
                 let mut text_with_box = vec![Inline::Str(check_mark), Inline::Space];
                 text_with_box.extend(to_do.rich_text.into_iter().map(|r| r.to_pandoc()));
                 let mut result = vec![Block::Plain(text_with_box)];
