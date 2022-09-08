@@ -90,7 +90,7 @@ impl NotionPage {
             if let Some(children) = block.children {
                 let mut flattened_children = Self::flatten(children);
                 match block.variant {
-                    NotionBlockVariant::Paragraph { paragraph: _ } => {
+                    NotionBlockVariant::Paragraph { inline: _ } => {
                         result.push(NotionBlock {
                             children: None,
                             ..block
@@ -119,18 +119,11 @@ impl NotionPage {
             match (result.last().map(|x| &x.variant), &block.variant) {
                 (
                     Some(BulletedList),
-                    BulletedListItem {
-                        bulleted_list_item: _,
-                    }
-                    | ToggleListItem { toggle: _ }
+                    BulletedListItem { inline: _ }
+                    | ToggleListItem { inline: _ }
                     | ToDoListItem { to_do: _ },
                 )
-                | (
-                    Some(NumberedList),
-                    NumberedListItem {
-                        numbered_list_item: _,
-                    },
-                ) => {
+                | (Some(NumberedList), NumberedListItem { inline: _ }) => {
                     result
                         .last_mut()
                         .unwrap()
@@ -141,10 +134,8 @@ impl NotionPage {
                 }
                 (
                     _,
-                    BulletedListItem {
-                        bulleted_list_item: _,
-                    }
-                    | ToggleListItem { toggle: _ }
+                    BulletedListItem { inline: _ }
+                    | ToggleListItem { inline: _ }
                     | ToDoListItem { to_do: _ },
                 ) => result.push(NotionBlock {
                     id: block.id,
@@ -152,12 +143,7 @@ impl NotionPage {
                     children: Some(vec![block]),
                     variant: BulletedList,
                 }),
-                (
-                    _,
-                    NumberedListItem {
-                        numbered_list_item: _,
-                    },
-                ) => result.push(NotionBlock {
+                (_, NumberedListItem { inline: _ }) => result.push(NotionBlock {
                     id: block.id,
                     archived: false,
                     children: Some(vec![block]),
@@ -195,31 +181,38 @@ struct NotionBlock {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum NotionBlockVariant {
     Paragraph {
-        paragraph: InlineContent,
+        #[serde(rename = "paragraph")]
+        inline: InlineContent,
     },
     #[serde(rename = "heading_1")]
     Heading1 {
-        heading_1: InlineContent,
+        #[serde(rename = "heading_1")]
+        inline: InlineContent,
     },
     #[serde(rename = "heading_2")]
     Heading2 {
-        heading_2: InlineContent,
+        #[serde(rename = "heading_2")]
+        inline: InlineContent,
     },
     #[serde(rename = "heading_3")]
     Heading3 {
-        heading_3: InlineContent,
+        #[serde(rename = "heading_3")]
+        inline: InlineContent,
     },
     Callout {
         callout: CalloutContent,
     },
     Quote {
-        quote: InlineContent,
+        #[serde(rename = "quote")]
+        inline: InlineContent,
     },
     BulletedListItem {
-        bulleted_list_item: InlineContent,
+        #[serde(rename = "bulleted_list_item")]
+        inline: InlineContent,
     },
     NumberedListItem {
-        numbered_list_item: InlineContent,
+        #[serde(rename = "numbered_list_item")]
+        inline: InlineContent,
     },
     #[serde(rename = "to_do")]
     ToDoListItem {
@@ -227,7 +220,8 @@ enum NotionBlockVariant {
     },
     #[serde(rename = "toggle")]
     ToggleListItem {
-        toggle: InlineContent,
+        #[serde(rename = "toggle")]
+        inline: InlineContent,
     },
     #[serde(skip)]
     BulletedList,
@@ -242,17 +236,21 @@ enum NotionBlockVariant {
         embed: EmbedContent,
     },
     Image {
-        image: FileContent,
+        #[serde(rename = "image")]
+        file: FileContent,
     },
     Video {
-        video: FileContent,
+        #[serde(rename = "video")]
+        file: FileContent,
     },
     File {
+        #[serde(rename = "file")]
         file: FileContent,
     },
     #[serde(rename = "pdf")]
     PDF {
-        pdf: FileContent,
+        #[serde(rename = "pdf")]
+        file: FileContent,
     },
     // Bookmark,
     Equation {
@@ -546,22 +544,18 @@ impl NotionBlock {
     fn to_pandoc(self) -> Block {
         use NotionBlockVariant::*;
         match self.variant {
-            Paragraph { paragraph } => Block::Para(paragraph.to_pandoc()),
-            Heading1 { heading_1 } => Block::Header(1, Attr::default(), heading_1.to_pandoc()),
-            Heading2 { heading_2 } => Block::Header(2, Attr::default(), heading_2.to_pandoc()),
-            Heading3 { heading_3 } => Block::Header(3, Attr::default(), heading_3.to_pandoc()),
+            Paragraph { inline } => Block::Para(inline.to_pandoc()),
+            Heading1 { inline } => Block::Header(1, Attr::default(), inline.to_pandoc()),
+            Heading2 { inline } => Block::Header(2, Attr::default(), inline.to_pandoc()),
+            Heading3 { inline } => Block::Header(3, Attr::default(), inline.to_pandoc()),
             Callout { callout: _ } => Block::Null, //TODO
-            Quote { quote } => Block::BlockQuote(quote.to_pandoc_with_children(self.children)),
+            Quote { inline } => Block::BlockQuote(inline.to_pandoc_with_children(self.children)),
             // {Bulleted,Numbered,ToDo,Toggle}ListItem should be
             // in a children of BulletedList/NumberedList node
-            BulletedListItem {
-                bulleted_list_item: _,
-            }
-            | NumberedListItem {
-                numbered_list_item: _,
-            }
+            BulletedListItem { inline: _ }
+            | NumberedListItem { inline: _ }
             | ToDoListItem { to_do: _ }
-            | ToggleListItem { toggle: _ } => unreachable!(),
+            | ToggleListItem { inline: _ } => unreachable!(),
             BulletedList => Block::BulletList(
                 self.children
                     .unwrap()
@@ -588,7 +582,7 @@ impl NotionBlock {
                 };
                 Block::CodeBlock(Attr(String::new(), vec![code.language], vec![]), text)
             }
-            Image { image: file } => {
+            Image { file } => {
                 let (caption, url) = match file {
                     FileContent::File { caption, file } => (caption, file.url),
                     FileContent::External { caption, external } => (caption, external.url),
@@ -600,7 +594,7 @@ impl NotionBlock {
                     Target(url, String::new()),
                 )])
             }
-            File { file } | Video { video: file } | PDF { pdf: file } => {
+            File { file } | Video { file } | PDF { file } => {
                 let (caption, url) = match file {
                     FileContent::File { caption, file } => (caption, file.url),
                     FileContent::External { caption, external } => (caption, external.url),
@@ -638,13 +632,9 @@ impl NotionBlock {
     fn convert_list_item(x: NotionBlock) -> Vec<Block> {
         use NotionBlockVariant::*;
         match x.variant {
-            BulletedListItem {
-                bulleted_list_item: variant,
-            }
-            | NumberedListItem {
-                numbered_list_item: variant,
-            }
-            | ToggleListItem { toggle: variant } => variant.to_pandoc_with_children(x.children),
+            BulletedListItem { inline }
+            | NumberedListItem { inline }
+            | ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
             ToDoListItem { to_do } => {
                 let check_mark = if to_do.checked {
                     "☑".to_string()
