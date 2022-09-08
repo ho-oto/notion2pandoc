@@ -23,7 +23,8 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    let mut page = NotionPage::new(Uuid::parse_str(&args.id).unwrap());
+    let id = Uuid::parse_str(&args.id).unwrap_or_else(|_| panic!("ID should be UUID"));
+    let mut page = NotionPage::new(id);
     page.fetch(&args.cert).await;
     let rsl = Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
@@ -207,13 +208,15 @@ enum NotionBlockVariant {
         #[serde(rename = "heading_3")]
         inline: InlineContent,
     },
-    Callout {
-        callout: CalloutContent,
-    },
     Quote {
         #[serde(rename = "quote")]
         inline: InlineContent,
     },
+
+    Callout {
+        callout: CalloutContent,
+    },
+
     BulletedListItem {
         #[serde(rename = "bulleted_list_item")]
         inline: InlineContent,
@@ -231,18 +234,14 @@ enum NotionBlockVariant {
         #[serde(rename = "toggle")]
         inline: InlineContent,
     },
-    #[serde(skip)]
-    BulletedList,
-    #[serde(skip)]
-    NumberedList,
+
     Code {
         code: CodeContent,
     },
-    // ChildPage,
-    // ChildDatabase,
-    Embed {
-        embed: EmbedContent,
+    Equation {
+        equation: EquationContent,
     },
+
     Image {
         #[serde(rename = "image")]
         file: FileContent,
@@ -260,29 +259,43 @@ enum NotionBlockVariant {
         #[serde(rename = "pdf")]
         file: FileContent,
     },
-    // Bookmark, TODO:
-    Equation {
-        equation: EquationContent,
+
+    Embed {
+        embed: EmbedContent,
     },
-    Divider,
-    TableOfContents,
-    // Breadcrumb,
-    // Column,
-    // ColumnList,
+    Bookmark {
+        #[serde(rename = "bookmark")]
+        embed: EmbedContent,
+    },
     LinkPreview {
         link_preview: Link,
     },
-    // Template,
     LinkToPage {
         link_to_page: LinkToPageContent,
     },
-    // SyncedBlock,
+
     Table {
         table: TableContent,
     },
     TableRow {
         table_row: TableRowContent,
     },
+
+    Divider,
+    TableOfContents,
+
+    #[serde(skip)]
+    BulletedList,
+    #[serde(skip)]
+    NumberedList,
+
+    // ChildPage,
+    // ChildDatabase,
+    // Breadcrumb,
+    // Column,
+    // ColumnList,
+    // Template,
+    // SyncedBlock,
     #[serde(other)]
     Unsupported,
 }
@@ -644,23 +657,30 @@ impl NotionBlock {
                     Target(url, String::new()),
                 )])
             }
-            Embed { embed } => Block::Para(vec![Inline::Link(
-                Attr::default(),
-                embed.caption.into_iter().map(|r| r.to_pandoc()).collect(),
-                Target(embed.url, String::new()),
-            )]),
+            Embed { embed } | Bookmark { embed } => {
+                let caption = if embed.caption.is_empty() {
+                    vec![Inline::Str(embed.url.clone())]
+                } else {
+                    embed.caption.into_iter().map(|r| r.to_pandoc()).collect()
+                };
+                Block::Para(vec![Inline::Link(
+                    Attr::default(),
+                    caption,
+                    Target(embed.url, String::new()),
+                )])
+            }
             Equation { equation } => Block::Para(vec![Inline::Math(
                 MathType::DisplayMath,
                 equation.expression,
             )]),
             Divider => Block::HorizontalRule,
-            TableOfContents => Block::Null,
+            TableOfContents => Block::Null, // TODO: support TOC
             LinkPreview { link_preview } => {
                 Block::Para(vec![
                     Inline::Str(link_preview.url.clone()).to_link(link_preview.url)
                 ])
             }
-            LinkToPage { link_to_page: _ } => Block::Null, // TODO:
+            LinkToPage { link_to_page: _ } => Block::Null, // TODO: support LinkToPage
             Table { table } => {
                 if let Some(mut children) = self.children {
                     let header_start = if table.has_column_header { 1 } else { 0 };
