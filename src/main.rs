@@ -44,31 +44,27 @@ async fn main() {
 
 async fn fetch_children(id: Uuid, secret: &String) -> Vec<notion::Block> {
     #[derive(Deserialize)]
-    struct NotionResponse {
+    struct Response {
         has_more: bool,
         next_cursor: Option<String>,
         results: Vec<notion::Block>,
     }
+
     let mut blocks = Vec::<notion::Block>::new();
     let mut has_more = true;
     let mut next_cursor = None;
     while has_more {
         let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
-        let params = if let Some(n) = next_cursor {
-            vec![("page_size", "100".to_string()), ("start_cursor", n)]
-        } else {
-            vec![("page_size", "100".to_string())]
-        };
-        let client = Client::new()
+        let params = next_cursor.map(|n| vec![("start_cursor", n)]);
+        let page = Client::new()
             .get(&url)
             .query(&params)
             .header("Authorization", format!("Bearer {}", secret))
-            .header("Notion-Version", NOTION_API_VERSION);
-        let page = client
+            .header("Notion-Version", NOTION_API_VERSION)
             .send()
             .await
             .unwrap_or_else(|_| panic!("failed to fetch children blocks of {}", id))
-            .json::<NotionResponse>()
+            .json::<Response>()
             .await
             .unwrap_or_else(|_| panic!("failed to deserialize children blocks of {}", id));
         next_cursor = page.next_cursor;
@@ -85,18 +81,19 @@ struct NotionPage {
 impl NotionPage {
     async fn fetch(id: Uuid, secret: &String) -> Self {
         #[derive(Deserialize)]
-        struct NotionResponse {
+        struct Response {
             archived: bool,
-            properties: TitleContent,
+            properties: Properties,
         }
         #[derive(Deserialize)]
-        struct TitleContent {
+        struct Properties {
             title: Title,
         }
         #[derive(Deserialize)]
         struct Title {
             title: Vec<notion::RichText>,
         }
+
         let url = format!("https://api.notion.com/v1/pages/{}", id);
         let meta = Client::new()
             .get(&url)
@@ -105,7 +102,7 @@ impl NotionPage {
             .send()
             .await
             .unwrap_or_else(|_| panic!("failed to fetch page {}", id))
-            .json::<NotionResponse>()
+            .json::<Response>()
             .await
             .unwrap_or_else(|_| panic!("failed to deserialize page {}", id));
         if meta.archived {
