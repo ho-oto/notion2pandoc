@@ -62,6 +62,7 @@ pub enum Inline {
     Note(Vec<Block>),
     Span(Attr, Vec<Inline>),
 }
+
 impl Inline {
     pub fn to_link(self, url: String) -> Self {
         Self::Link(Attr::default(), vec![self], Target(url, String::new()))
@@ -123,6 +124,8 @@ pub enum MathType {
     DisplayMath,
     InlineMath,
 }
+
+// structs for Table
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Caption(pub Option<ShortCaption>, pub Vec<Block>);

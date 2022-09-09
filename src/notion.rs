@@ -4,6 +4,8 @@ use uuid::Uuid;
 
 // https://developers.notion.com/reference/intro
 
+// struct of Notion blocks
+
 fn deserialize_children<'de, D>(deserializer: D) -> Result<Option<Vec<Block>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -20,104 +22,104 @@ pub struct Block {
     pub id: Uuid,
     pub archived: bool,
     #[serde(flatten)]
-    pub variant: BlockVariant,
+    pub var: Var,
     #[serde(deserialize_with = "deserialize_children", rename = "has_children")]
     pub children: Option<Vec<Block>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum BlockVariant {
+pub enum Var {
     Paragraph {
         #[serde(rename = "paragraph")]
-        inline: InlineContent,
+        inline: Inline,
     },
     #[serde(rename = "heading_1")]
     Heading1 {
         #[serde(rename = "heading_1")]
-        inline: InlineContent,
+        inline: Inline,
     },
     #[serde(rename = "heading_2")]
     Heading2 {
         #[serde(rename = "heading_2")]
-        inline: InlineContent,
+        inline: Inline,
     },
     #[serde(rename = "heading_3")]
     Heading3 {
         #[serde(rename = "heading_3")]
-        inline: InlineContent,
+        inline: Inline,
     },
     Quote {
         #[serde(rename = "quote")]
-        inline: InlineContent,
+        inline: Inline,
     },
 
     Callout {
-        callout: CalloutContent,
+        callout: Callout,
     },
 
     BulletedListItem {
         #[serde(rename = "bulleted_list_item")]
-        inline: InlineContent,
+        inline: Inline,
     },
     NumberedListItem {
         #[serde(rename = "numbered_list_item")]
-        inline: InlineContent,
+        inline: Inline,
     },
     #[serde(rename = "to_do")]
     ToDoListItem {
-        to_do: ToDoContent,
+        to_do: ToDo,
     },
     #[serde(rename = "toggle")]
     ToggleListItem {
         #[serde(rename = "toggle")]
-        inline: InlineContent,
+        inline: Inline,
     },
 
     Code {
-        code: CodeContent,
+        code: Code,
     },
     Equation {
-        equation: EquationContent,
+        equation: Equation,
     },
 
     Image {
         #[serde(rename = "image")]
-        file: FileContent,
+        file: File,
     },
     Video {
         #[serde(rename = "video")]
-        file: FileContent,
+        file: File,
     },
     File {
         #[serde(rename = "file")]
-        file: FileContent,
+        file: File,
     },
     #[serde(rename = "pdf")]
     PDF {
         #[serde(rename = "pdf")]
-        file: FileContent,
+        file: File,
     },
 
     Embed {
-        embed: EmbedContent,
+        embed: Embed,
     },
     Bookmark {
         #[serde(rename = "bookmark")]
-        embed: EmbedContent,
+        embed: Embed,
     },
     LinkPreview {
         link_preview: Link,
     },
     LinkToPage {
-        link_to_page: LinkToPageContent,
+        link_to_page: LinkToPage,
     },
 
     Table {
-        table: TableContent,
+        table: Table,
     },
     TableRow {
-        table_row: TableRowContent,
+        table_row: TableRow,
     },
 
     Divider,
@@ -140,14 +142,63 @@ pub enum BlockVariant {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InlineContent {
+pub struct Inline {
     pub rich_text: Vec<RichText>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CalloutContent {
+pub struct Callout {
     pub rich_text: Vec<RichText>,
     pub icon: Icon,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToDo {
+    pub rich_text: Vec<RichText>,
+    pub checked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Code {
+    pub rich_text: Vec<RichText>,
+    pub caption: Vec<RichText>,
+    pub language: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Equation {
+    pub expression: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum File {
+    External {
+        caption: Vec<RichText>,
+        external: ExternalFileLink,
+    },
+    File {
+        caption: Vec<RichText>,
+        file: FileLink,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Embed {
+    pub caption: Vec<RichText>,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Link {
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LinkToPage {
+    PageId { page_id: Uuid },
+    DatabaseId { database_id: Uuid },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -163,38 +214,6 @@ pub struct Emoji {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ToDoContent {
-    pub rich_text: Vec<RichText>,
-    pub checked: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EmbedContent {
-    pub caption: Vec<RichText>,
-    pub url: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CodeContent {
-    pub rich_text: Vec<RichText>,
-    pub caption: Vec<RichText>,
-    pub language: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum FileContent {
-    External {
-        caption: Vec<RichText>,
-        external: ExternalFileLink,
-    },
-    File {
-        caption: Vec<RichText>,
-        file: FileLink,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExternalFileLink {
     pub url: String,
 }
@@ -206,56 +225,46 @@ pub struct FileLink {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum LinkToPageContent {
-    PageId { page_id: Uuid },
-    DatabaseId { database_id: Uuid },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TableContent {
+pub struct Table {
     pub table_width: u64,
     pub has_column_header: bool,
     pub has_row_header: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TableRowContent {
+pub struct TableRow {
     pub cells: Vec<Vec<RichText>>,
 }
+
+// common structs
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RichText {
     Text {
         annotations: Annotations,
-        text: TextContent,
+        text: Text,
     },
     Mention {
         plain_text: String,
         annotations: Annotations,
-        mention: MentionContent,
+        mention: Mention,
     },
     Equation {
         annotations: Annotations,
-        equation: EquationContent,
+        equation: Equation,
     },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TextContent {
+pub struct Text {
     pub content: String,
     pub link: Option<Link>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Link {
-    pub url: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum MentionContent {
+pub enum Mention {
     Page { page: PageId },
     Date,
     User,
@@ -264,11 +273,6 @@ pub enum MentionContent {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PageId {
     pub id: Uuid,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EquationContent {
-    pub expression: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
