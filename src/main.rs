@@ -1,12 +1,12 @@
+mod notion;
 mod pandoc;
 
 use async_recursion::async_recursion;
-use chrono::{DateTime, Local};
 use clap::Parser;
 use futures::future::join_all;
 use itertools::join;
 use reqwest::Client;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
 
 /// https://developers.notion.com/reference/intro
@@ -42,14 +42,14 @@ async fn main() {
     println!("{}", serde_json::to_string(&rsl).unwrap())
 }
 
-async fn fetch_children(id: Uuid, secret: &String) -> Vec<NotionBlock> {
+async fn fetch_children(id: Uuid, secret: &String) -> Vec<notion::Block> {
     #[derive(Deserialize)]
     struct NotionResponse {
         has_more: bool,
         next_cursor: Option<String>,
-        results: Vec<NotionBlock>,
+        results: Vec<notion::Block>,
     }
-    let mut blocks = Vec::<NotionBlock>::new();
+    let mut blocks = Vec::<notion::Block>::new();
     let mut has_more = true;
     let mut next_cursor = None;
     while has_more {
@@ -80,7 +80,7 @@ async fn fetch_children(id: Uuid, secret: &String) -> Vec<NotionBlock> {
 
 struct NotionPage {
     title: String,
-    blocks: Vec<NotionBlock>,
+    blocks: Vec<notion::Block>,
 }
 impl NotionPage {
     async fn fetch(id: Uuid, secret: &String) -> Self {
@@ -95,7 +95,7 @@ impl NotionPage {
         }
         #[derive(Deserialize)]
         struct Title {
-            title: Vec<NotionRichText>,
+            title: Vec<notion::RichText>,
         }
         let url = format!("https://api.notion.com/v1/pages/{}", id);
         let meta = Client::new()
@@ -113,7 +113,7 @@ impl NotionPage {
         }
         let title = join(
             meta.properties.title.title.into_iter().map(|r| match r {
-                NotionRichText::Text {
+                notion::RichText::Text {
                     annotations: _,
                     text,
                 } => text.content.clone(),
@@ -132,21 +132,21 @@ impl NotionPage {
         Self { title, blocks }
     }
 
-    fn flatten(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
-        let mut result = Vec::<NotionBlock>::new();
+    fn flatten(blocks: Vec<notion::Block>) -> Vec<notion::Block> {
+        let mut result = Vec::<notion::Block>::new();
         for block in blocks {
             if let Some(children) = block.children {
                 let mut flattened_children = Self::flatten(children);
                 match block.variant {
-                    NotionBlockVariant::Paragraph { inline: _ } => {
-                        result.push(NotionBlock {
+                    notion::BlockVariant::Paragraph { inline: _ } => {
+                        result.push(notion::Block {
                             children: None,
                             ..block
                         });
                         result.append(&mut flattened_children);
                     }
                     _ => {
-                        result.push(NotionBlock {
+                        result.push(notion::Block {
                             children: Some(flattened_children),
                             ..block
                         });
@@ -159,9 +159,9 @@ impl NotionPage {
         result
     }
 
-    fn join_list_block(blocks: Vec<NotionBlock>) -> Vec<NotionBlock> {
-        use NotionBlockVariant::*;
-        let mut result = Vec::<NotionBlock>::new();
+    fn join_list_block(blocks: Vec<notion::Block>) -> Vec<notion::Block> {
+        use notion::BlockVariant::*;
+        let mut result = Vec::<notion::Block>::new();
         for mut block in blocks {
             block.children = block.children.map(Self::join_list_block);
             match (result.last().map(|x| &x.variant), &block.variant) {
@@ -185,13 +185,13 @@ impl NotionPage {
                     BulletedListItem { inline: _ }
                     | ToggleListItem { inline: _ }
                     | ToDoListItem { to_do: _ },
-                ) => result.push(NotionBlock {
+                ) => result.push(notion::Block {
                     id: block.id,
                     archived: false,
                     children: Some(vec![block]),
                     variant: BulletedList,
                 }),
-                (_, NumberedListItem { inline: _ }) => result.push(NotionBlock {
+                (_, NumberedListItem { inline: _ }) => result.push(notion::Block {
                     id: block.id,
                     archived: false,
                     children: Some(vec![block]),
@@ -206,139 +206,7 @@ impl NotionPage {
     }
 }
 
-fn deserialize_children<'de, D>(deserializer: D) -> Result<Option<Vec<NotionBlock>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(if bool::deserialize(deserializer)? {
-        Some(Vec::<NotionBlock>::new())
-    } else {
-        None
-    })
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct NotionBlock {
-    id: Uuid,
-    archived: bool,
-    #[serde(flatten)]
-    variant: NotionBlockVariant,
-    #[serde(deserialize_with = "deserialize_children", rename = "has_children")]
-    children: Option<Vec<NotionBlock>>,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum NotionBlockVariant {
-    Paragraph {
-        #[serde(rename = "paragraph")]
-        inline: InlineContent,
-    },
-    #[serde(rename = "heading_1")]
-    Heading1 {
-        #[serde(rename = "heading_1")]
-        inline: InlineContent,
-    },
-    #[serde(rename = "heading_2")]
-    Heading2 {
-        #[serde(rename = "heading_2")]
-        inline: InlineContent,
-    },
-    #[serde(rename = "heading_3")]
-    Heading3 {
-        #[serde(rename = "heading_3")]
-        inline: InlineContent,
-    },
-    Quote {
-        #[serde(rename = "quote")]
-        inline: InlineContent,
-    },
-
-    Callout {
-        callout: CalloutContent,
-    },
-
-    BulletedListItem {
-        #[serde(rename = "bulleted_list_item")]
-        inline: InlineContent,
-    },
-    NumberedListItem {
-        #[serde(rename = "numbered_list_item")]
-        inline: InlineContent,
-    },
-    #[serde(rename = "to_do")]
-    ToDoListItem {
-        to_do: ToDoContent,
-    },
-    #[serde(rename = "toggle")]
-    ToggleListItem {
-        #[serde(rename = "toggle")]
-        inline: InlineContent,
-    },
-
-    Code {
-        code: CodeContent,
-    },
-    Equation {
-        equation: EquationContent,
-    },
-
-    Image {
-        #[serde(rename = "image")]
-        file: FileContent,
-    },
-    Video {
-        #[serde(rename = "video")]
-        file: FileContent,
-    },
-    File {
-        #[serde(rename = "file")]
-        file: FileContent,
-    },
-    #[serde(rename = "pdf")]
-    PDF {
-        #[serde(rename = "pdf")]
-        file: FileContent,
-    },
-
-    Embed {
-        embed: EmbedContent,
-    },
-    Bookmark {
-        #[serde(rename = "bookmark")]
-        embed: EmbedContent,
-    },
-    LinkPreview {
-        link_preview: Link,
-    },
-    LinkToPage {
-        link_to_page: LinkToPageContent,
-    },
-
-    Table {
-        table: TableContent,
-    },
-    TableRow {
-        table_row: TableRowContent,
-    },
-
-    Divider,
-    TableOfContents,
-
-    #[serde(skip)]
-    BulletedList,
-    #[serde(skip)]
-    NumberedList,
-
-    // ChildPage,
-    // ChildDatabase,
-    // Breadcrumb,
-    // Column,
-    // ColumnList,
-    // Template,
-    // SyncedBlock,
-    #[serde(other)]
-    Unsupported,
-}
-impl NotionBlock {
+impl notion::Block {
     #[async_recursion]
     async fn fetch_recursive(&mut self, secret: &String) {
         if let Some(_) = self.children {
@@ -354,134 +222,11 @@ impl NotionBlock {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct InlineContent {
-    rich_text: Vec<NotionRichText>,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct CalloutContent {
-    rich_text: Vec<NotionRichText>,
-    icon: Icon,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum Icon {
-    Emoji { emoji: String },
-    External { external: Link },
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Emoji {
-    emoji: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ToDoContent {
-    rich_text: Vec<NotionRichText>,
-    checked: bool,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct EmbedContent {
-    caption: Vec<NotionRichText>,
-    url: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct CodeContent {
-    rich_text: Vec<NotionRichText>,
-    caption: Vec<NotionRichText>,
-    language: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-enum FileContent {
-    External {
-        caption: Vec<NotionRichText>,
-        external: ExternalFileLink,
-    },
-    File {
-        caption: Vec<NotionRichText>,
-        file: FileLink,
-    },
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ExternalFileLink {
-    url: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct FileLink {
-    url: String,
-    expiry_time: DateTime<Local>,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum LinkToPageContent {
-    PageId { page_id: Uuid },
-    DatabaseId { database_id: Uuid },
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct TableContent {
-    table_width: u64,
-    has_column_header: bool,
-    has_row_header: bool,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct TableRowContent {
-    cells: Vec<Vec<NotionRichText>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-enum NotionRichText {
-    Text {
-        annotations: NotionAnnotations,
-        text: TextContent,
-    },
-    Mention {
-        plain_text: String,
-        annotations: NotionAnnotations,
-        mention: MentionContent,
-    },
-    Equation {
-        annotations: NotionAnnotations,
-        equation: EquationContent,
-    },
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct TextContent {
-    content: String,
-    link: Option<Link>,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Link {
-    url: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
-enum MentionContent {
-    Page { page: NotionPageId },
-    Date,
-    User,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct NotionPageId {
-    id: Uuid,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct EquationContent {
-    expression: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct NotionAnnotations {
-    bold: bool,
-    italic: bool,
-    strikethrough: bool,
-    underline: bool,
-    code: bool,
-}
-
-impl InlineContent {
+impl notion::InlineContent {
     fn to_pandoc(self) -> Vec<pandoc::Inline> {
         self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
     }
-    fn to_pandoc_with_children(self, children: Option<Vec<NotionBlock>>) -> Vec<pandoc::Block> {
+    fn to_pandoc_with_children(self, children: Option<Vec<notion::Block>>) -> Vec<pandoc::Block> {
         let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
         if let Some(children) = children {
             result.extend(children.into_iter().map(|b| b.to_pandoc()));
@@ -490,10 +235,10 @@ impl InlineContent {
     }
 }
 
-impl NotionBlock {
+impl notion::Block {
     fn to_pandoc(self) -> pandoc::Block {
+        use notion::BlockVariant::*;
         use pandoc::*;
-        use NotionBlockVariant::*;
         match self.variant {
             Paragraph { inline } => Block::Para(inline.to_pandoc()),
             Heading1 { inline } => Block::Header(2, Attr::default(), inline.to_pandoc()),
@@ -525,7 +270,7 @@ impl NotionBlock {
             Code { code } => {
                 assert!(code.rich_text.len() == 1);
                 let text = match code.rich_text.first() {
-                    Some(NotionRichText::Text {
+                    Some(notion::RichText::Text {
                         annotations: _,
                         text,
                     }) => text.content.clone(),
@@ -535,8 +280,8 @@ impl NotionBlock {
             }
             Image { file } => {
                 let (caption, url) = match file {
-                    FileContent::File { caption, file } => (caption, file.url),
-                    FileContent::External { caption, external } => (caption, external.url),
+                    notion::FileContent::File { caption, file } => (caption, file.url),
+                    notion::FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
                 Block::Para(vec![Inline::Image(
@@ -547,8 +292,8 @@ impl NotionBlock {
             }
             File { file } | Video { file } | PDF { file } => {
                 let (caption, url) = match file {
-                    FileContent::File { caption, file } => (caption, file.url),
-                    FileContent::External { caption, external } => (caption, external.url),
+                    notion::FileContent::File { caption, file } => (caption, file.url),
+                    notion::FileContent::External { caption, external } => (caption, external.url),
                 };
                 let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
                 Block::Para(vec![Inline::Link(
@@ -613,23 +358,23 @@ impl NotionBlock {
         }
     }
 
-    fn convert_table_row(x: NotionBlock) -> pandoc::Row {
+    fn convert_table_row(x: notion::Block) -> pandoc::Row {
         match x.variant {
-            NotionBlockVariant::TableRow { table_row } => {
+            notion::BlockVariant::TableRow { table_row } => {
                 Self::convert_table_cells(table_row.cells)
             }
             _ => unreachable!(),
         }
     }
 
-    fn convert_table_cells(x: Vec<Vec<NotionRichText>>) -> pandoc::Row {
+    fn convert_table_cells(x: Vec<Vec<notion::RichText>>) -> pandoc::Row {
         pandoc::Row(
             pandoc::Attr::default(),
             x.into_iter().map(Self::convert_table_cell).collect(),
         )
     }
 
-    fn convert_table_cell(x: Vec<NotionRichText>) -> pandoc::Cell {
+    fn convert_table_cell(x: Vec<notion::RichText>) -> pandoc::Cell {
         pandoc::Cell(
             pandoc::Attr::default(),
             pandoc::Alignment::default(),
@@ -641,8 +386,8 @@ impl NotionBlock {
         )
     }
 
-    fn convert_list_item(x: NotionBlock) -> Vec<pandoc::Block> {
-        use NotionBlockVariant::*;
+    fn convert_list_item(x: notion::Block) -> Vec<pandoc::Block> {
+        use notion::BlockVariant::*;
         match x.variant {
             BulletedListItem { inline }
             | NumberedListItem { inline }
@@ -663,14 +408,14 @@ impl NotionBlock {
     }
 }
 
-impl NotionRichText {
+impl notion::RichText {
     fn to_pandoc(self) -> pandoc::Inline {
         match self {
-            NotionRichText::Text { annotations, text } => {
+            notion::RichText::Text { annotations, text } => {
                 if let Some(link) = text.link {
-                    NotionRichText::Text {
+                    notion::RichText::Text {
                         annotations,
-                        text: TextContent { link: None, ..text },
+                        text: notion::TextContent { link: None, ..text },
                     }
                     .to_pandoc()
                     .to_link(link.url)
@@ -683,12 +428,12 @@ impl NotionRichText {
                     Self::annotate(inline, annotations)
                 }
             }
-            NotionRichText::Mention {
+            notion::RichText::Mention {
                 plain_text,
                 annotations,
                 mention: _,
             } => Self::annotate(pandoc::Inline::Str(plain_text), annotations),
-            NotionRichText::Equation {
+            notion::RichText::Equation {
                 annotations,
                 equation,
             } => Self::annotate(
@@ -698,7 +443,7 @@ impl NotionRichText {
         }
     }
 
-    fn annotate(inline: pandoc::Inline, annotations: NotionAnnotations) -> pandoc::Inline {
+    fn annotate(inline: pandoc::Inline, annotations: notion::Annotations) -> pandoc::Inline {
         let mut result = inline;
         if annotations.bold {
             result = pandoc::Inline::Strong(vec![result]);
