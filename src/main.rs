@@ -1,16 +1,9 @@
 mod notion;
 mod pandoc;
 
-use async_recursion::async_recursion;
 use clap::Parser;
-use futures::future::join_all;
-use itertools::join;
-use reqwest::Client;
-use serde::Deserialize;
 use uuid::Uuid;
 
-/// https://developers.notion.com/reference/intro
-static NOTION_API_VERSION: &str = "2022-06-28";
 /// https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
 static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
 
@@ -27,196 +20,16 @@ struct Cli {
 async fn main() {
     let args = Cli::parse();
     let id = Uuid::parse_str(&args.id).unwrap_or_else(|_| panic!("ID should be UUID"));
-    let page = NotionPage::fetch(id, &args.cert).await;
-    let mut blocks = vec![pandoc::Block::Header(
-        1,
-        pandoc::Attr::default(),
-        vec![pandoc::Inline::Str(page.title)],
-    )];
-    blocks.extend(page.blocks.into_iter().map(|b| b.to_pandoc()));
+    let page = notion::Page::fetch(id, &args.cert).await;
     let rsl = pandoc::Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: pandoc::Meta {},
-        blocks,
+        blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
     };
     println!("{}", serde_json::to_string(&rsl).unwrap())
 }
 
-async fn fetch_children(id: Uuid, secret: &String) -> Vec<notion::Block> {
-    #[derive(Deserialize)]
-    struct Response {
-        has_more: bool,
-        next_cursor: Option<String>,
-        results: Vec<notion::Block>,
-    }
-
-    let mut blocks = Vec::<notion::Block>::new();
-    let mut has_more = true;
-    let mut next_cursor = None;
-    while has_more {
-        let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
-        let params = next_cursor.map(|n| vec![("start_cursor", n)]);
-        let page = Client::new()
-            .get(&url)
-            .query(&params)
-            .header("Authorization", format!("Bearer {}", secret))
-            .header("Notion-Version", NOTION_API_VERSION)
-            .send()
-            .await
-            .unwrap_or_else(|_| panic!("failed to fetch children blocks of {}", id))
-            .json::<Response>()
-            .await
-            .unwrap_or_else(|_| panic!("failed to deserialize children blocks of {}", id));
-        next_cursor = page.next_cursor;
-        has_more = page.has_more;
-        blocks.extend(page.results.into_iter().filter(|x| !x.archived));
-    }
-    blocks
-}
-
-struct NotionPage {
-    title: String,
-    blocks: Vec<notion::Block>,
-}
-impl NotionPage {
-    async fn fetch(id: Uuid, secret: &String) -> Self {
-        #[derive(Deserialize)]
-        struct Response {
-            archived: bool,
-            properties: Properties,
-        }
-        #[derive(Deserialize)]
-        struct Properties {
-            title: Title,
-        }
-        #[derive(Deserialize)]
-        struct Title {
-            title: Vec<notion::RichText>,
-        }
-
-        let url = format!("https://api.notion.com/v1/pages/{}", id);
-        let meta = Client::new()
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", secret))
-            .header("Notion-Version", NOTION_API_VERSION)
-            .send()
-            .await
-            .unwrap_or_else(|_| panic!("failed to fetch page {}", id))
-            .json::<Response>()
-            .await
-            .unwrap_or_else(|_| panic!("failed to deserialize page {}", id));
-        if meta.archived {
-            panic!("archived page")
-        }
-        let title = join(
-            meta.properties.title.title.into_iter().map(|r| match r {
-                notion::RichText::Text {
-                    annotations: _,
-                    text,
-                } => text.content.clone(),
-                _ => panic!(),
-            }),
-            "",
-        );
-        let mut blocks = fetch_children(id, secret).await;
-        join_all(
-            blocks
-                .iter_mut()
-                .map(|x| async { x.fetch_recursive(secret).await }),
-        )
-        .await;
-        blocks = Self::join_list_block(Self::flatten(blocks));
-        Self { title, blocks }
-    }
-
-    fn flatten(blocks: Vec<notion::Block>) -> Vec<notion::Block> {
-        let mut result = Vec::<notion::Block>::new();
-        for block in blocks {
-            if let Some(children) = block.children {
-                let mut flattened_children = Self::flatten(children);
-                match block.var {
-                    notion::Var::Paragraph { inline: _ } => {
-                        result.push(notion::Block {
-                            children: None,
-                            ..block
-                        });
-                        result.append(&mut flattened_children);
-                    }
-                    _ => {
-                        result.push(notion::Block {
-                            children: Some(flattened_children),
-                            ..block
-                        });
-                    }
-                }
-            } else {
-                result.push(block);
-            }
-        }
-        result
-    }
-
-    fn join_list_block(blocks: Vec<notion::Block>) -> Vec<notion::Block> {
-        let mut result = Vec::<notion::Block>::new();
-        for mut block in blocks {
-            block.children = block.children.map(Self::join_list_block);
-            match (result.last().map(|x| &x.var), &block.var) {
-                (
-                    Some(notion::Var::BulletedList),
-                    notion::Var::BulletedListItem { inline: _ }
-                    | notion::Var::ToggleListItem { inline: _ }
-                    | notion::Var::ToDoListItem { to_do: _ },
-                )
-                | (Some(notion::Var::NumberedList), notion::Var::NumberedListItem { inline: _ }) => {
-                    result
-                        .last_mut()
-                        .unwrap()
-                        .children
-                        .as_mut()
-                        .unwrap()
-                        .push(block);
-                }
-                (
-                    _,
-                    notion::Var::BulletedListItem { inline: _ }
-                    | notion::Var::ToggleListItem { inline: _ }
-                    | notion::Var::ToDoListItem { to_do: _ },
-                ) => result.push(notion::Block {
-                    id: block.id,
-                    archived: false,
-                    children: Some(vec![block]),
-                    var: notion::Var::BulletedList,
-                }),
-                (_, notion::Var::NumberedListItem { inline: _ }) => result.push(notion::Block {
-                    id: block.id,
-                    archived: false,
-                    children: Some(vec![block]),
-                    var: notion::Var::NumberedList,
-                }),
-                _ => {
-                    result.push(block);
-                }
-            };
-        }
-        result
-    }
-}
-
 impl notion::Block {
-    #[async_recursion]
-    async fn fetch_recursive(&mut self, secret: &String) {
-        if let Some(_) = self.children {
-            let mut children = fetch_children(self.id, secret).await;
-            join_all(
-                children
-                    .iter_mut()
-                    .map(|x| async { x.fetch_recursive(secret).await }),
-            )
-            .await;
-            self.children = Some(children);
-        }
-    }
-
     fn to_pandoc(self) -> pandoc::Block {
         match self.var {
             notion::Var::Paragraph { inline } => pandoc::Block::Para(inline.to_pandoc()),
@@ -411,6 +224,7 @@ impl notion::Inline {
     fn to_pandoc(self) -> Vec<pandoc::Inline> {
         self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
     }
+
     fn to_pandoc_with_children(self, children: Option<Vec<notion::Block>>) -> Vec<pandoc::Block> {
         let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
         if let Some(children) = children {

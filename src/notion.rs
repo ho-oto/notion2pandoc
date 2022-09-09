@@ -2,7 +2,14 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
-// https://developers.notion.com/reference/intro
+/// https://developers.notion.com/reference/intro
+static NOTION_API_VERSION: &str = "2022-06-28";
+
+// struct of Notion page
+
+pub struct Page {
+    pub blocks: Vec<Block>,
+}
 
 // struct of Notion blocks
 
@@ -282,4 +289,187 @@ pub struct Annotations {
     pub strikethrough: bool,
     pub underline: bool,
     pub code: bool,
+}
+
+// API reqwest
+
+use async_recursion::async_recursion;
+use futures::future::join_all;
+use itertools::join;
+use reqwest::Client;
+
+async fn fetch_blocks(id: Uuid, secret: &String) -> Vec<Block> {
+    #[derive(Deserialize)]
+    struct Response {
+        has_more: bool,
+        next_cursor: Option<String>,
+        results: Vec<Block>,
+    }
+
+    let mut blocks = Vec::<Block>::new();
+    let mut has_more = true;
+    let mut next_cursor = None;
+    while has_more {
+        let url = format!("https://api.notion.com/v1/blocks/{}/children", id);
+        let params = next_cursor.map(|n| vec![("start_cursor", n)]);
+        let page = Client::new()
+            .get(&url)
+            .query(&params)
+            .header("Authorization", format!("Bearer {}", secret))
+            .header("Notion-Version", NOTION_API_VERSION)
+            .send()
+            .await
+            .unwrap_or_else(|_| panic!("failed to fetch children blocks of {}", id))
+            .json::<Response>()
+            .await
+            .unwrap_or_else(|_| panic!("failed to deserialize children blocks of {}", id));
+        next_cursor = page.next_cursor;
+        has_more = page.has_more;
+        blocks.extend(page.results.into_iter().filter(|x| !x.archived));
+    }
+    blocks
+}
+
+#[allow(dead_code)]
+async fn fetch_title(id: Uuid, secret: &String) -> String {
+    #[derive(Deserialize)]
+    struct Response {
+        archived: bool,
+        properties: Properties,
+    }
+    #[derive(Deserialize)]
+    struct Properties {
+        title: Title,
+    }
+    #[derive(Deserialize)]
+    struct Title {
+        title: Vec<RichText>,
+    }
+
+    let url = format!("https://api.notion.com/v1/pages/{}", id);
+    let meta = Client::new()
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", secret))
+        .header("Notion-Version", NOTION_API_VERSION)
+        .send()
+        .await
+        .unwrap_or_else(|_| panic!("failed to fetch page {}", id))
+        .json::<Response>()
+        .await
+        .unwrap_or_else(|_| panic!("failed to deserialize page {}", id));
+    if meta.archived {
+        panic!("archived page")
+    }
+    join(
+        meta.properties.title.title.into_iter().map(|r| match r {
+            RichText::Text {
+                annotations: _,
+                text,
+            } => text.content.clone(),
+            _ => panic!(),
+        }),
+        "",
+    )
+}
+
+fn flatten_paragraph_block(blocks: Vec<Block>) -> Vec<Block> {
+    let mut result = Vec::<Block>::new();
+    for block in blocks {
+        if let Some(children) = block.children {
+            let mut flattened_children = flatten_paragraph_block(children);
+            match block.var {
+                Var::Paragraph { inline: _ } => {
+                    result.push(Block {
+                        children: None,
+                        ..block
+                    });
+                    result.append(&mut flattened_children);
+                }
+                _ => {
+                    result.push(Block {
+                        children: Some(flattened_children),
+                        ..block
+                    });
+                }
+            }
+        } else {
+            result.push(block);
+        }
+    }
+    result
+}
+
+fn join_list_block(blocks: Vec<Block>) -> Vec<Block> {
+    let mut result = Vec::<Block>::new();
+    for mut block in blocks {
+        block.children = block.children.map(join_list_block);
+        match (result.last().map(|x| &x.var), &block.var) {
+            (
+                Some(Var::BulletedList),
+                Var::BulletedListItem { inline: _ }
+                | Var::ToggleListItem { inline: _ }
+                | Var::ToDoListItem { to_do: _ },
+            )
+            | (Some(Var::NumberedList), Var::NumberedListItem { inline: _ }) => {
+                result
+                    .last_mut()
+                    .unwrap()
+                    .children
+                    .as_mut()
+                    .unwrap()
+                    .push(block);
+            }
+            (
+                _,
+                Var::BulletedListItem { inline: _ }
+                | Var::ToggleListItem { inline: _ }
+                | Var::ToDoListItem { to_do: _ },
+            ) => result.push(Block {
+                id: block.id,
+                archived: false,
+                children: Some(vec![block]),
+                var: Var::BulletedList,
+            }),
+            (_, Var::NumberedListItem { inline: _ }) => result.push(Block {
+                id: block.id,
+                archived: false,
+                children: Some(vec![block]),
+                var: Var::NumberedList,
+            }),
+            _ => {
+                result.push(block);
+            }
+        };
+    }
+    result
+}
+
+impl Page {
+    pub async fn fetch(id: Uuid, secret: &String) -> Self {
+        let mut blocks = fetch_blocks(id, secret).await;
+        join_all(
+            blocks
+                .iter_mut()
+                .map(|x| async { x.fetch_recursive(secret).await }),
+        )
+        .await;
+        blocks = join_list_block(flatten_paragraph_block(blocks));
+        Self { blocks }
+    }
+}
+
+impl Block {
+    #[async_recursion]
+    pub async fn fetch_recursive(&mut self, secret: &String) {
+        if let Some(_) = self.children {
+            let mut children = fetch_blocks(self.id, secret).await;
+            join_all(
+                children
+                    .iter_mut()
+                    .map(|x| async { x.fetch_recursive(secret).await }),
+            )
+            .await;
+            self.children = Some(children);
+        }
+    }
 }
