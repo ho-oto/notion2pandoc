@@ -220,22 +220,7 @@ impl notion::Block {
             self.children = Some(children);
         }
     }
-}
 
-impl notion::InlineContent {
-    fn to_pandoc(self) -> Vec<pandoc::Inline> {
-        self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
-    }
-    fn to_pandoc_with_children(self, children: Option<Vec<notion::Block>>) -> Vec<pandoc::Block> {
-        let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
-        if let Some(children) = children {
-            result.extend(children.into_iter().map(|b| b.to_pandoc()));
-        }
-        result
-    }
-}
-
-impl notion::Block {
     fn to_pandoc(self) -> pandoc::Block {
         use notion::BlockVariant::*;
         use pandoc::*;
@@ -405,6 +390,19 @@ impl notion::Block {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+impl notion::InlineContent {
+    fn to_pandoc(self) -> Vec<pandoc::Inline> {
+        self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
+    }
+    fn to_pandoc_with_children(self, children: Option<Vec<notion::Block>>) -> Vec<pandoc::Block> {
+        let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
+        if let Some(children) = children {
+            result.extend(children.into_iter().map(|b| b.to_pandoc()));
+        }
+        result
     }
 }
 

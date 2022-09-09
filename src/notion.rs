@@ -2,6 +2,8 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
+// https://developers.notion.com/reference/intro
+
 fn deserialize_children<'de, D>(deserializer: D) -> Result<Option<Vec<Block>>, D::Error>
 where
     D: Deserializer<'de>,
