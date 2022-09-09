@@ -1,3 +1,5 @@
+mod pandoc;
+
 use async_recursion::async_recursion;
 use chrono::{DateTime, Local};
 use clap::Parser;
@@ -26,15 +28,15 @@ async fn main() {
     let args = Cli::parse();
     let id = Uuid::parse_str(&args.id).unwrap_or_else(|_| panic!("ID should be UUID"));
     let page = NotionPage::fetch(id, &args.cert).await;
-    let mut blocks = vec![Block::Header(
+    let mut blocks = vec![pandoc::Block::Header(
         1,
-        Attr::default(),
-        vec![Inline::Str(page.title)],
+        pandoc::Attr::default(),
+        vec![pandoc::Inline::Str(page.title)],
     )];
     blocks.extend(page.blocks.into_iter().map(|b| b.to_pandoc()));
-    let rsl = Pandoc {
+    let rsl = pandoc::Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
-        meta: Meta {},
+        meta: pandoc::Meta {},
         blocks,
     };
     println!("{}", serde_json::to_string(&rsl).unwrap())
@@ -475,152 +477,12 @@ struct NotionAnnotations {
     code: bool,
 }
 
-// Pandoc
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct Pandoc {
-    pandoc_api_version: [u64; 4],
-    meta: Meta,
-    blocks: Vec<Block>,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct Meta {}
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum Block {
-    Plain(Vec<Inline>),
-    Para(Vec<Inline>),
-    // LineBlock(Vec<Vec<Inline>>),
-    CodeBlock(Attr, String),
-    // RawBlock(Format, Text),
-    BlockQuote(Vec<Block>),
-    OrderedList(ListAttributes, Vec<Vec<Block>>),
-    BulletList(Vec<Vec<Block>>),
-    // DefinitionList(Vec<(Vec<Inline>,Vec<Vec<Block>>)>),
-    Header(u64, Attr, Vec<Inline>),
-    HorizontalRule,
-    Table(
-        Attr,
-        Caption,
-        Vec<ColSpec>,
-        TableHead,
-        Vec<TableBody>,
-        TableFoot,
-    ),
-    Div(Attr, Vec<Block>),
-    Null,
-}
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum Inline {
-    Str(String),
-    Emph(Vec<Inline>),
-    Strong(Vec<Inline>),
-    Strikeout(Vec<Inline>),
-    // Superscript(Vec<Inline>),
-    // Subscript(Vec<Inline>),
-    // SmallCaps(Vec<Inline>),
-    // Quoted(QuoteType, Vec<Inline>),
-    // Cite(Vec<Citation>, Vec<Inline>),
-    Code(Attr, String),
-    Space,
-    // SoftBreak,
-    LineBreak,
-    Math(MathType, String),
-    // RawInline(Format, String),
-    Link(Attr, Vec<Inline>, Target),
-    Image(Attr, Vec<Inline>, Target),
-    Note(Vec<Block>),
-    Span(Attr, Vec<Inline>),
-}
-impl Inline {
-    fn to_link(self, url: String) -> Self {
-        Self::Link(Attr::default(), vec![self], Target(url, String::new()))
-    }
-}
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum Alignment {
-    AlignLeft,
-    AlignRight,
-    AlignCenter,
-    #[default]
-    AlignDefault,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct ListAttributes(u64, ListNumberStyle, ListNumberDelim);
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum ListNumberStyle {
-    #[default]
-    DefaultStyle,
-    Example,
-    Decimal,
-    LowerRoman,
-    UpperRoman,
-    LowerAlpha,
-    UpperAlpha,
-}
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum ListNumberDelim {
-    #[default]
-    DefaultDelim,
-    Period,
-    OneParen,
-    TwoParens,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct Format(String);
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct Attr(String, Vec<String>, Vec<(String, String)>);
-#[derive(Debug, Serialize, Deserialize)]
-struct Target(String, String);
-#[derive(Debug, Serialize, Deserialize)]
-struct TableCell(Vec<Block>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum MathType {
-    #[default]
-    DisplayMath,
-    InlineMath,
-}
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Caption(Option<ShortCaption>, Vec<Block>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct ShortCaption(Vec<Inline>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Row(Attr, Vec<Cell>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct ColSpec(Alignment, ColWidth);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct RowHeadColumns(u64);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct TableHead(Attr, Vec<Row>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct TableBody(Attr, RowHeadColumns, Vec<Row>, Vec<Row>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct TableFoot(Attr, Vec<Row>);
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(tag = "t", content = "c")]
-enum ColWidth {
-    ColWidth(f64),
-    #[default]
-    ColWidthDefault,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct Cell(Attr, Alignment, RowSpan, ColSpan, Vec<Block>);
-#[derive(Debug, Serialize, Deserialize)]
-struct RowSpan(u64);
-#[derive(Debug, Serialize, Deserialize)]
-struct ColSpan(u64);
-
 impl InlineContent {
-    fn to_pandoc(self) -> Vec<Inline> {
+    fn to_pandoc(self) -> Vec<pandoc::Inline> {
         self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
     }
-    fn to_pandoc_with_children(self, children: Option<Vec<NotionBlock>>) -> Vec<Block> {
-        let mut result = vec![Block::Plain(self.to_pandoc())];
+    fn to_pandoc_with_children(self, children: Option<Vec<NotionBlock>>) -> Vec<pandoc::Block> {
+        let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
         if let Some(children) = children {
             result.extend(children.into_iter().map(|b| b.to_pandoc()));
         }
@@ -629,7 +491,8 @@ impl InlineContent {
 }
 
 impl NotionBlock {
-    fn to_pandoc(self) -> Block {
+    fn to_pandoc(self) -> pandoc::Block {
+        use pandoc::*;
         use NotionBlockVariant::*;
         match self.variant {
             Paragraph { inline } => Block::Para(inline.to_pandoc()),
@@ -750,7 +613,7 @@ impl NotionBlock {
         }
     }
 
-    fn convert_table_row(x: NotionBlock) -> Row {
+    fn convert_table_row(x: NotionBlock) -> pandoc::Row {
         match x.variant {
             NotionBlockVariant::TableRow { table_row } => {
                 Self::convert_table_cells(table_row.cells)
@@ -759,24 +622,26 @@ impl NotionBlock {
         }
     }
 
-    fn convert_table_cells(x: Vec<Vec<NotionRichText>>) -> Row {
-        Row(
-            Attr::default(),
+    fn convert_table_cells(x: Vec<Vec<NotionRichText>>) -> pandoc::Row {
+        pandoc::Row(
+            pandoc::Attr::default(),
             x.into_iter().map(Self::convert_table_cell).collect(),
         )
     }
 
-    fn convert_table_cell(x: Vec<NotionRichText>) -> Cell {
-        Cell(
-            Attr::default(),
-            Alignment::default(),
-            RowSpan(1),
-            ColSpan(1),
-            vec![Block::Plain(x.into_iter().map(|r| r.to_pandoc()).collect())],
+    fn convert_table_cell(x: Vec<NotionRichText>) -> pandoc::Cell {
+        pandoc::Cell(
+            pandoc::Attr::default(),
+            pandoc::Alignment::default(),
+            pandoc::RowSpan(1),
+            pandoc::ColSpan(1),
+            vec![pandoc::Block::Plain(
+                x.into_iter().map(|r| r.to_pandoc()).collect(),
+            )],
         )
     }
 
-    fn convert_list_item(x: NotionBlock) -> Vec<Block> {
+    fn convert_list_item(x: NotionBlock) -> Vec<pandoc::Block> {
         use NotionBlockVariant::*;
         match x.variant {
             BulletedListItem { inline }
@@ -784,9 +649,10 @@ impl NotionBlock {
             | ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
             ToDoListItem { to_do } => {
                 let check_mark = format!("{}", if to_do.checked { "☒" } else { "☐" });
-                let mut text_with_box = vec![Inline::Str(check_mark), Inline::Space];
+                let mut text_with_box =
+                    vec![pandoc::Inline::Str(check_mark), pandoc::Inline::Space];
                 text_with_box.extend(to_do.rich_text.into_iter().map(|r| r.to_pandoc()));
-                let mut result = vec![Block::Plain(text_with_box)];
+                let mut result = vec![pandoc::Block::Plain(text_with_box)];
                 if let Some(children) = x.children {
                     result.extend(children.into_iter().map(|b| b.to_pandoc()));
                 }
@@ -798,7 +664,7 @@ impl NotionBlock {
 }
 
 impl NotionRichText {
-    fn to_pandoc(self) -> Inline {
+    fn to_pandoc(self) -> pandoc::Inline {
         match self {
             NotionRichText::Text { annotations, text } => {
                 if let Some(link) = text.link {
@@ -810,9 +676,9 @@ impl NotionRichText {
                     .to_link(link.url)
                 } else {
                     let inline = if annotations.code {
-                        Inline::Code(Attr::default(), text.content)
+                        pandoc::Inline::Code(pandoc::Attr::default(), text.content)
                     } else {
-                        Inline::Str(text.content)
+                        pandoc::Inline::Str(text.content)
                     };
                     Self::annotate(inline, annotations)
                 }
@@ -821,27 +687,27 @@ impl NotionRichText {
                 plain_text,
                 annotations,
                 mention: _,
-            } => Self::annotate(Inline::Str(plain_text), annotations),
+            } => Self::annotate(pandoc::Inline::Str(plain_text), annotations),
             NotionRichText::Equation {
                 annotations,
                 equation,
             } => Self::annotate(
-                Inline::Math(MathType::InlineMath, equation.expression),
+                pandoc::Inline::Math(pandoc::MathType::InlineMath, equation.expression),
                 annotations,
             ),
         }
     }
 
-    fn annotate(inline: Inline, annotations: NotionAnnotations) -> Inline {
+    fn annotate(inline: pandoc::Inline, annotations: NotionAnnotations) -> pandoc::Inline {
         let mut result = inline;
         if annotations.bold {
-            result = Inline::Strong(vec![result]);
+            result = pandoc::Inline::Strong(vec![result]);
         }
         if annotations.italic || annotations.underline {
-            result = Inline::Strong(vec![result]);
+            result = pandoc::Inline::Strong(vec![result]);
         }
         if annotations.strikethrough {
-            result = Inline::Strikeout(vec![result]);
+            result = pandoc::Inline::Strikeout(vec![result]);
         }
         result
     }
