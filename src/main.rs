@@ -275,7 +275,7 @@ impl notion::RichText {
             result = pandoc::Inline::Strong(vec![result]);
         }
         if annotations.italic || annotations.underline {
-            result = pandoc::Inline::Strong(vec![result]);
+            result = pandoc::Inline::Emph(vec![result]);
         }
         if annotations.strikethrough {
             result = pandoc::Inline::Strikeout(vec![result]);
