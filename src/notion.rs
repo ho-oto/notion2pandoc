@@ -456,6 +456,11 @@ impl Page {
         blocks = join_list_block(flatten_paragraph_block(blocks));
         Self { blocks }
     }
+
+    #[allow(dead_code)]
+    pub fn has_toc(&self) -> bool {
+        self.blocks.iter().any(|x| x.has_toc())
+    }
 }
 
 impl Block {
@@ -471,5 +476,16 @@ impl Block {
             .await;
             self.children = Some(children);
         }
+    }
+
+    pub fn has_toc(&self) -> bool {
+        let mut result = match &self.var {
+            Var::TableOfContents => true,
+            _ => false,
+        };
+        if let Some(children) = &self.children {
+            result |= children.iter().any(|b| b.has_toc());
+        }
+        result
     }
 }

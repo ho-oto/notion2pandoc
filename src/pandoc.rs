@@ -35,7 +35,7 @@ pub enum Block {
         Vec<TableBody>,
         TableFoot,
     ),
-    // Div(Attr, Vec<Block>),
+    Div(Attr, Vec<Block>),
     Null,
 }
 
@@ -65,7 +65,7 @@ pub enum Inline {
 
 impl Inline {
     pub fn to_link(self, url: String) -> Self {
-        Self::Link(Attr::default(), vec![self], Target(url, String::new()))
+        Self::Link(Attr::default(), vec![self], Target(url, "".to_string()))
     }
 }
 

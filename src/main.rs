@@ -19,14 +19,17 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    let id = Uuid::parse_str(&args.id).unwrap_or_else(|_| panic!("ID should be UUID"));
+    let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
     let page = notion::Page::fetch(id, &args.cert).await;
     let rsl = pandoc::Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: pandoc::Meta {},
         blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
     };
-    println!("{}", serde_json::to_string(&rsl).unwrap())
+    println!(
+        "{}",
+        serde_json::to_string(&rsl).expect("failed to serialize")
+    )
 }
 
 impl notion::Block {
@@ -42,19 +45,28 @@ impl notion::Block {
             notion::Var::Heading3 { inline } => {
                 pandoc::Block::Header(4, pandoc::Attr::default(), inline.to_pandoc())
             }
-            notion::Var::Callout { callout: _ } => pandoc::Block::Null, //TODO
+            notion::Var::Callout { callout } => pandoc::Block::Div(
+                pandoc::Attr("".to_string(), vec!["callout".to_string()], vec![]),
+                vec![pandoc::Block::Plain(
+                    callout
+                        .rich_text
+                        .into_iter()
+                        .map(|r| r.to_pandoc())
+                        .collect(),
+                )],
+            ),
             notion::Var::Quote { inline } => {
                 pandoc::Block::BlockQuote(inline.to_pandoc_with_children(self.children))
             }
-            // {Bulleted,Numbered,ToDo,Toggle}ListItem should be
+            // {Bulleted, Numbered, ToDo, Toggle}ListItem should be
             // in a children of BulletedList/NumberedList node
             notion::Var::BulletedListItem { inline: _ }
             | notion::Var::NumberedListItem { inline: _ }
             | notion::Var::ToDoListItem { to_do: _ }
-            | notion::Var::ToggleListItem { inline: _ } => unreachable!(),
+            | notion::Var::ToggleListItem { inline: _ } => panic!("list item in top-level"),
             notion::Var::BulletedList => pandoc::Block::BulletList(
                 self.children
-                    .unwrap()
+                    .expect("bulleted list should have children")
                     .into_iter()
                     .map(Self::convert_list_item)
                     .collect(),
@@ -66,7 +78,7 @@ impl notion::Block {
                     pandoc::ListNumberDelim::Period,
                 ),
                 self.children
-                    .unwrap()
+                    .expect("numbered list should have children")
                     .into_iter()
                     .map(Self::convert_list_item)
                     .collect(),
@@ -81,7 +93,7 @@ impl notion::Block {
                     _ => unreachable!(),
                 };
                 pandoc::Block::CodeBlock(
-                    pandoc::Attr(String::new(), vec![code.language], vec![]),
+                    pandoc::Attr("".to_string(), vec![code.language], vec![]),
                     text,
                 )
             }
@@ -94,7 +106,7 @@ impl notion::Block {
                 pandoc::Block::Para(vec![pandoc::Inline::Image(
                     pandoc::Attr::default(),
                     caption,
-                    pandoc::Target(url, String::new()),
+                    pandoc::Target(url, "".to_string()),
                 )])
             }
             notion::Var::File { file }
@@ -108,7 +120,7 @@ impl notion::Block {
                 pandoc::Block::Para(vec![pandoc::Inline::Link(
                     pandoc::Attr::default(),
                     caption,
-                    pandoc::Target(url, String::new()),
+                    pandoc::Target(url, "".to_string()),
                 )])
             }
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
@@ -120,7 +132,7 @@ impl notion::Block {
                 pandoc::Block::Para(vec![pandoc::Inline::Link(
                     pandoc::Attr::default(),
                     caption,
-                    pandoc::Target(embed.url, String::new()),
+                    pandoc::Target(embed.url, "".to_string()),
                 )])
             }
             notion::Var::Equation { equation } => pandoc::Block::Para(vec![pandoc::Inline::Math(
@@ -128,7 +140,7 @@ impl notion::Block {
                 equation.expression,
             )]),
             notion::Var::Divider => pandoc::Block::HorizontalRule,
-            notion::Var::TableOfContents => pandoc::Block::Null, // TODO: support TOC
+            notion::Var::TableOfContents => pandoc::Block::Null,
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
             ]),
@@ -167,7 +179,7 @@ impl notion::Block {
                     pandoc::Block::Null
                 }
             }
-            notion::Var::TableRow { table_row: _ } => unreachable!(),
+            notion::Var::TableRow { table_row: _ } => panic!("table row in top level"),
             _ => pandoc::Block::Null,
         }
     }
