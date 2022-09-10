@@ -116,7 +116,11 @@ impl notion::Block {
                     notion::File::File { caption, file } => (caption, file.url),
                     notion::File::External { caption, external } => (caption, external.url),
                 };
-                let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
+                let caption = if caption.is_empty() {
+                    vec![pandoc::Inline::Str(url.clone())]
+                } else {
+                    caption.into_iter().map(|r| r.to_pandoc()).collect()
+                };
                 pandoc::Block::Para(vec![pandoc::Inline::Link(
                     pandoc::Attr::default(),
                     caption,
