@@ -24,7 +24,7 @@ where
     })
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Block {
     pub id: Uuid,
     pub archived: bool,
@@ -34,7 +34,7 @@ pub struct Block {
     pub children: Option<Vec<Block>>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Var {
     Paragraph {
@@ -148,36 +148,36 @@ pub enum Var {
     Unsupported,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Inline {
     pub rich_text: Vec<RichText>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Callout {
     pub rich_text: Vec<RichText>,
     pub icon: Icon,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct ToDo {
     pub rich_text: Vec<RichText>,
     pub checked: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Code {
     pub rich_text: Vec<RichText>,
     pub caption: Vec<RichText>,
     pub language: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Equation {
     pub expression: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum File {
     External {
@@ -190,62 +190,62 @@ pub enum File {
     },
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Embed {
     pub caption: Vec<RichText>,
     pub url: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Link {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LinkToPage {
     PageId { page_id: Uuid },
     DatabaseId { database_id: Uuid },
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Icon {
     Emoji { emoji: String },
     External { external: Link },
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Emoji {
     pub emoji: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct ExternalFileLink {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct FileLink {
     pub url: String,
     pub expiry_time: DateTime<Local>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Table {
     pub table_width: u64,
     pub has_column_header: bool,
     pub has_row_header: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct TableRow {
     pub cells: Vec<Vec<RichText>>,
 }
 
 // common structs
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RichText {
     Text {
@@ -263,13 +263,13 @@ pub enum RichText {
     },
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Text {
     pub content: String,
     pub link: Option<Link>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Mention {
     Page { page: PageId },
@@ -277,12 +277,12 @@ pub enum Mention {
     User,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct PageId {
     pub id: Uuid,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Annotations {
     pub bold: bool,
     pub italic: bool,
@@ -306,7 +306,7 @@ async fn fetch_blocks(id: Uuid, secret: &String) -> Vec<Block> {
         results: Vec<Block>,
     }
 
-    let mut blocks = Vec::<Block>::new();
+    let mut blocks = vec![]; //Vec::<Block>::new();
     let mut has_more = true;
     let mut next_cursor = None;
     while has_more {
@@ -366,7 +366,7 @@ async fn fetch_title(id: Uuid, secret: &String) -> String {
                 annotations: _,
                 text,
             } => text.content.clone(),
-            _ => panic!(),
+            _ => panic!("mention or equation in title"),
         }),
         "",
     )
@@ -378,7 +378,7 @@ fn flatten_paragraph_block(blocks: Vec<Block>) -> Vec<Block> {
         if let Some(children) = block.children {
             let mut flattened_children = flatten_paragraph_block(children);
             match block.var {
-                Var::Paragraph { inline: _ } => {
+                Var::Paragraph { .. } => {
                     result.push(Block {
                         children: None,
                         ..block
@@ -403,34 +403,39 @@ fn join_list_block(blocks: Vec<Block>) -> Vec<Block> {
     let mut result = Vec::<Block>::new();
     for mut block in blocks {
         block.children = block.children.map(join_list_block);
-        match (result.last().map(|x| &x.var), &block.var) {
+        match (result.last_mut(), &block.var) {
             (
-                Some(Var::BulletedList),
-                Var::BulletedListItem { inline: _ }
-                | Var::ToggleListItem { inline: _ }
-                | Var::ToDoListItem { to_do: _ },
+                Some(Block {
+                    var: Var::BulletedList,
+                    children: Some(children),
+                    ..
+                }),
+                Var::BulletedListItem { .. }
+                | Var::ToggleListItem { .. }
+                | Var::ToDoListItem { .. },
             )
-            | (Some(Var::NumberedList), Var::NumberedListItem { inline: _ }) => {
-                result
-                    .last_mut()
-                    .unwrap()
-                    .children
-                    .as_mut()
-                    .unwrap()
-                    .push(block);
+            | (
+                Some(Block {
+                    var: Var::NumberedList,
+                    children: Some(children),
+                    ..
+                }),
+                Var::NumberedListItem { .. },
+            ) => {
+                children.push(block);
             }
             (
                 _,
-                Var::BulletedListItem { inline: _ }
-                | Var::ToggleListItem { inline: _ }
-                | Var::ToDoListItem { to_do: _ },
+                Var::BulletedListItem { .. }
+                | Var::ToggleListItem { .. }
+                | Var::ToDoListItem { .. },
             ) => result.push(Block {
                 id: block.id,
                 archived: false,
                 children: Some(vec![block]),
                 var: Var::BulletedList,
             }),
-            (_, Var::NumberedListItem { inline: _ }) => result.push(Block {
+            (_, Var::NumberedListItem { .. }) => result.push(Block {
                 id: block.id,
                 archived: false,
                 children: Some(vec![block]),

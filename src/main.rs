@@ -60,10 +60,10 @@ impl notion::Block {
             }
             // {Bulleted, Numbered, ToDo, Toggle}ListItem should be
             // in a children of BulletedList/NumberedList node
-            notion::Var::BulletedListItem { inline: _ }
-            | notion::Var::NumberedListItem { inline: _ }
-            | notion::Var::ToDoListItem { to_do: _ }
-            | notion::Var::ToggleListItem { inline: _ } => panic!("list item in top-level"),
+            notion::Var::BulletedListItem { .. }
+            | notion::Var::NumberedListItem { .. }
+            | notion::Var::ToDoListItem { .. }
+            | notion::Var::ToggleListItem { .. } => panic!("list item in top-level"),
             notion::Var::BulletedList => pandoc::Block::BulletList(
                 self.children
                     .expect("bulleted list should have children")
@@ -90,7 +90,7 @@ impl notion::Block {
                         annotations: _,
                         text,
                     }) => text.content.clone(),
-                    _ => unreachable!(),
+                    _ => panic!("mention or equation in code"),
                 };
                 pandoc::Block::CodeBlock(
                     pandoc::Attr("".to_string(), vec![code.language], vec![]),
@@ -144,21 +144,16 @@ impl notion::Block {
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
             ]),
-            notion::Var::LinkToPage { link_to_page: _ } => pandoc::Block::Null, // TODO: support LinkToPage
+            notion::Var::LinkToPage { .. } => pandoc::Block::Null, // TODO: support LinkToPage
             notion::Var::Table { table } => {
-                if let Some(mut children) = self.children {
+                if let Some(children) = self.children {
                     let header_start = if table.has_column_header { 1 } else { 0 };
-                    let (header, body) = children.split_at_mut(header_start);
-                    let header: Vec<pandoc::Row> = header
-                        .to_owned()
-                        .into_iter()
-                        .map(Self::convert_table_row)
-                        .collect();
-                    let body: Vec<pandoc::Row> = body
-                        .to_owned()
-                        .into_iter()
-                        .map(Self::convert_table_row)
-                        .collect();
+                    let mut header = children;
+                    let body = header.split_off(header_start);
+                    let header: Vec<pandoc::Row> =
+                        header.into_iter().map(Self::convert_table_row).collect();
+                    let body: Vec<pandoc::Row> =
+                        body.into_iter().map(Self::convert_table_row).collect();
                     let col_specs = (0..table.table_width)
                         .map(|_| pandoc::ColSpec::default())
                         .collect();
@@ -179,7 +174,7 @@ impl notion::Block {
                     pandoc::Block::Null
                 }
             }
-            notion::Var::TableRow { table_row: _ } => panic!("table row in top level"),
+            notion::Var::TableRow { .. } => panic!("table row in top level"),
             _ => pandoc::Block::Null,
         }
     }
@@ -187,7 +182,7 @@ impl notion::Block {
     fn convert_table_row(x: notion::Block) -> pandoc::Row {
         match x.var {
             notion::Var::TableRow { table_row } => Self::convert_table_cells(table_row.cells),
-            _ => unreachable!(),
+            _ => panic!("child of table should be a table row"),
         }
     }
 
@@ -211,12 +206,11 @@ impl notion::Block {
     }
 
     fn convert_list_item(x: notion::Block) -> Vec<pandoc::Block> {
-        use notion::Var::*;
         match x.var {
-            BulletedListItem { inline }
-            | NumberedListItem { inline }
-            | ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
-            ToDoListItem { to_do } => {
+            notion::Var::BulletedListItem { inline }
+            | notion::Var::NumberedListItem { inline }
+            | notion::Var::ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
+            notion::Var::ToDoListItem { to_do } => {
                 let check_mark = format!("{}", if to_do.checked { "☒" } else { "☐" });
                 let mut text_with_box =
                     vec![pandoc::Inline::Str(check_mark), pandoc::Inline::Space];
@@ -227,7 +221,7 @@ impl notion::Block {
                 }
                 result
             }
-            _ => unreachable!(),
+            _ => panic!("child of list should be a list item"),
         }
     }
 }
@@ -269,7 +263,7 @@ impl notion::RichText {
             notion::RichText::Mention {
                 plain_text,
                 annotations,
-                mention: _,
+                ..
             } => Self::annotate(pandoc::Inline::Str(plain_text), annotations),
             notion::RichText::Equation {
                 annotations,
