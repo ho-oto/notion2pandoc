@@ -18,7 +18,7 @@ where
     D: Deserializer<'de>,
 {
     Ok(if bool::deserialize(deserializer)? {
-        Some(Vec::<Block>::new())
+        Some(vec![])
     } else {
         None
     })
@@ -306,7 +306,7 @@ async fn fetch_blocks(id: Uuid, secret: &String) -> Vec<Block> {
         results: Vec<Block>,
     }
 
-    let mut blocks = vec![]; //Vec::<Block>::new();
+    let mut blocks = vec![];
     let mut has_more = true;
     let mut next_cursor = None;
     while has_more {
@@ -373,7 +373,7 @@ async fn fetch_title(id: Uuid, secret: &String) -> String {
 }
 
 fn flatten_paragraph_block(blocks: Vec<Block>) -> Vec<Block> {
-    let mut result = Vec::<Block>::new();
+    let mut result = vec![];
     for block in blocks {
         if let Some(children) = block.children {
             let mut flattened_children = flatten_paragraph_block(children);
@@ -400,7 +400,7 @@ fn flatten_paragraph_block(blocks: Vec<Block>) -> Vec<Block> {
 }
 
 fn join_list_block(blocks: Vec<Block>) -> Vec<Block> {
-    let mut result = Vec::<Block>::new();
+    let mut result = vec![];
     for mut block in blocks {
         block.children = block.children.map(join_list_block);
         match (result.last_mut(), &block.var) {

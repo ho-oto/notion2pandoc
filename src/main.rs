@@ -12,15 +12,15 @@ static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
 struct Cli {
     #[clap(short = 'i')]
     id: String,
-    #[clap(short = 'c')]
-    cert: String,
+    #[clap(short = 's')]
+    secret: String,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
     let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
-    let page = notion::Page::fetch(id, &args.cert).await;
+    let page = notion::Page::fetch(id, &args.secret).await;
     let rsl = pandoc::Pandoc {
         pandoc_api_version: PANDOC_API_VERSION,
         meta: pandoc::Meta {},
