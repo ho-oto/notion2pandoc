@@ -45,6 +45,10 @@ impl notion::Block {
             notion::Var::Heading3 { inline } => {
                 pandoc::Block::Header(4, pandoc::Attr::default(), inline.to_pandoc())
             }
+            notion::Var::Quote { inline } => {
+                pandoc::Block::BlockQuote(inline.to_pandoc_with_children(self.children))
+            }
+
             notion::Var::Callout { callout } => pandoc::Block::Div(
                 pandoc::Attr("".to_string(), vec!["callout".to_string()], vec![]),
                 vec![pandoc::Block::Plain(
@@ -55,34 +59,14 @@ impl notion::Block {
                         .collect(),
                 )],
             ),
-            notion::Var::Quote { inline } => {
-                pandoc::Block::BlockQuote(inline.to_pandoc_with_children(self.children))
-            }
+
             // {Bulleted, Numbered, ToDo, Toggle}ListItem should be
             // in a children of BulletedList/NumberedList node
             notion::Var::BulletedListItem { .. }
             | notion::Var::NumberedListItem { .. }
             | notion::Var::ToDoListItem { .. }
             | notion::Var::ToggleListItem { .. } => panic!("list item in top-level"),
-            notion::Var::BulletedList => pandoc::Block::BulletList(
-                self.children
-                    .expect("bulleted list should have children")
-                    .into_iter()
-                    .map(Self::convert_list_item)
-                    .collect(),
-            ),
-            notion::Var::NumberedList => pandoc::Block::OrderedList(
-                pandoc::ListAttributes(
-                    1,
-                    pandoc::ListNumberStyle::Decimal,
-                    pandoc::ListNumberDelim::Period,
-                ),
-                self.children
-                    .expect("numbered list should have children")
-                    .into_iter()
-                    .map(Self::convert_list_item)
-                    .collect(),
-            ),
+
             notion::Var::Code { code } => {
                 assert!(code.rich_text.len() == 1);
                 let text = match code.rich_text.first() {
@@ -97,6 +81,11 @@ impl notion::Block {
                     text,
                 )
             }
+            notion::Var::Equation { equation } => pandoc::Block::Para(vec![pandoc::Inline::Math(
+                pandoc::MathType::DisplayMath,
+                equation.expression,
+            )]),
+
             notion::Var::Image { file } => {
                 let (caption, url) = match file {
                     notion::File::File { caption, file } => (caption, file.url),
@@ -109,8 +98,8 @@ impl notion::Block {
                     pandoc::Target(url, "".to_string()),
                 )])
             }
-            notion::Var::File { file }
-            | notion::Var::Video { file }
+            notion::Var::Video { file }
+            | notion::Var::File { file }
             | notion::Var::PDF { file } => {
                 let (caption, url) = match file {
                     notion::File::File { caption, file } => (caption, file.url),
@@ -127,6 +116,7 @@ impl notion::Block {
                     pandoc::Target(url, "".to_string()),
                 )])
             }
+
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
                 let caption = if embed.caption.is_empty() {
                     vec![pandoc::Inline::Str(embed.url.clone())]
@@ -139,12 +129,6 @@ impl notion::Block {
                     pandoc::Target(embed.url, "".to_string()),
                 )])
             }
-            notion::Var::Equation { equation } => pandoc::Block::Para(vec![pandoc::Inline::Math(
-                pandoc::MathType::DisplayMath,
-                equation.expression,
-            )]),
-            notion::Var::Divider => pandoc::Block::HorizontalRule,
-            notion::Var::TableOfContents => pandoc::Block::Null,
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
             ]),
@@ -159,6 +143,7 @@ impl notion::Block {
                 ),
                 notion::LinkToPage::DatabaseId { .. } => pandoc::Block::Null,
             },
+
             notion::Var::Table { table } => {
                 if let Some(children) = self.children {
                     let header_start = if table.has_column_header { 1 } else { 0 };
@@ -189,6 +174,30 @@ impl notion::Block {
                 }
             }
             notion::Var::TableRow { .. } => panic!("table row in top level"),
+
+            notion::Var::Divider => pandoc::Block::HorizontalRule,
+            notion::Var::TableOfContents => pandoc::Block::Null,
+
+            notion::Var::BulletedList => pandoc::Block::BulletList(
+                self.children
+                    .expect("bulleted list should have children")
+                    .into_iter()
+                    .map(Self::convert_list_item)
+                    .collect(),
+            ),
+            notion::Var::NumberedList => pandoc::Block::OrderedList(
+                pandoc::ListAttributes(
+                    1,
+                    pandoc::ListNumberStyle::Decimal,
+                    pandoc::ListNumberDelim::Period,
+                ),
+                self.children
+                    .expect("numbered list should have children")
+                    .into_iter()
+                    .map(Self::convert_list_item)
+                    .collect(),
+            ),
+
             _ => pandoc::Block::Null,
         }
     }
