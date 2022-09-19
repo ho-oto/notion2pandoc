@@ -122,7 +122,7 @@ impl notion::Block {
                     caption.into_iter().map(|r| r.to_pandoc()).collect()
                 };
                 pandoc::Block::Para(vec![pandoc::Inline::Link(
-                    pandoc::Attr::default(),
+                    pandoc::Attr("".to_string(), vec!["file".to_string()], vec![]),
                     caption,
                     pandoc::Target(url, "".to_string()),
                 )])
@@ -134,7 +134,7 @@ impl notion::Block {
                     embed.caption.into_iter().map(|r| r.to_pandoc()).collect()
                 };
                 pandoc::Block::Para(vec![pandoc::Inline::Link(
-                    pandoc::Attr::default(),
+                    pandoc::Attr("".to_string(), vec!["embed".to_string()], vec![]),
                     caption,
                     pandoc::Target(embed.url, "".to_string()),
                 )])
@@ -148,7 +148,17 @@ impl notion::Block {
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
             ]),
-            notion::Var::LinkToPage { .. } => pandoc::Block::Null, // TODO: support LinkToPage
+            notion::Var::LinkToPage { link_to_page } => match link_to_page {
+                notion::LinkToPage::PageId { page_id } => pandoc::Block::Div(
+                    pandoc::Attr(
+                        "".to_string(),
+                        vec!["link_to_page".to_string()],
+                        vec![("id".to_string(), page_id.to_string())],
+                    ),
+                    vec![],
+                ),
+                notion::LinkToPage::DatabaseId { .. } => pandoc::Block::Null,
+            },
             notion::Var::Table { table } => {
                 if let Some(children) = self.children {
                     let header_start = if table.has_column_header { 1 } else { 0 };
