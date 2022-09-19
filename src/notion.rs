@@ -366,7 +366,7 @@ pub async fn fetch_meta(id: Uuid, secret: &String) -> (String, DateTime<Local>, 
             RichText::Text {
                 annotations: _,
                 text,
-            } => text.content.clone(),
+            } => text.content,
             _ => panic!("mention or equation in title"),
         }),
         "",

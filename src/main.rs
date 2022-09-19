@@ -4,6 +4,7 @@ mod pandoc;
 use std::collections::HashMap;
 
 use clap::Parser;
+use itertools::join;
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -82,14 +83,16 @@ impl notion::Block {
             | notion::Var::ToggleListItem { .. } => panic!("list item in top-level"),
 
             notion::Var::Code { code } => {
-                assert!(code.rich_text.len() == 1);
-                let text = match code.rich_text.first() {
-                    Some(notion::RichText::Text {
-                        annotations: _,
-                        text,
-                    }) => text.content.clone(),
-                    _ => panic!("mention or equation in code"),
-                };
+                let text = join(
+                    code.rich_text.into_iter().map(|r| match r {
+                        notion::RichText::Text {
+                            annotations: _,
+                            text,
+                        } => text.content,
+                        _ => panic!("mention or equation in title"),
+                    }),
+                    "",
+                );
                 pandoc::Block::CodeBlock(
                     pandoc::Attr("".to_string(), vec![code.language], vec![]),
                     text,
