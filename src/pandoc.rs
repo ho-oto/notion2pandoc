@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 // https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
+pub static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -11,7 +14,18 @@ pub struct Pandoc {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Meta {}
+pub struct Meta(pub HashMap<String, MetaValue>);
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "t", content = "c")]
+pub enum MetaValue {
+    // MetaMap(HashMap<String, MetaValue>),
+    // MetaList(Vec<MetaValue>),
+    MetaBool(bool),
+    MetaString(String),
+    // MetaInlines(Vec<Inline>),
+    // MetaBlocks(Vec<Block>),
+}
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "t", content = "c")]

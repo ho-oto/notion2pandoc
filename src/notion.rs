@@ -330,11 +330,12 @@ async fn fetch_blocks(id: Uuid, secret: &String) -> Vec<Block> {
     blocks
 }
 
-#[allow(dead_code)]
-async fn fetch_title(id: Uuid, secret: &String) -> String {
+pub async fn fetch_meta(id: Uuid, secret: &String) -> (String, DateTime<Local>, DateTime<Local>) {
     #[derive(Deserialize)]
     struct Response {
         archived: bool,
+        created_time: DateTime<Local>,
+        last_edited_time: DateTime<Local>,
         properties: Properties,
     }
     #[derive(Deserialize)]
@@ -360,7 +361,7 @@ async fn fetch_title(id: Uuid, secret: &String) -> String {
     if meta.archived {
         panic!("archived page")
     }
-    join(
+    let title = join(
         meta.properties.title.title.into_iter().map(|r| match r {
             RichText::Text {
                 annotations: _,
@@ -369,7 +370,8 @@ async fn fetch_title(id: Uuid, secret: &String) -> String {
             _ => panic!("mention or equation in title"),
         }),
         "",
-    )
+    );
+    (title, meta.created_time, meta.last_edited_time)
 }
 
 fn flatten_paragraph_block(blocks: Vec<Block>) -> Vec<Block> {
@@ -462,7 +464,6 @@ impl Page {
         Self { blocks }
     }
 
-    #[allow(dead_code)]
     pub fn has_toc(&self) -> bool {
         self.blocks.iter().any(|x| x.has_toc())
     }

@@ -1,11 +1,10 @@
 mod notion;
 mod pandoc;
 
+use std::collections::HashMap;
+
 use clap::Parser;
 use uuid::Uuid;
-
-/// https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
-static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -21,9 +20,24 @@ async fn main() {
     let args = Cli::parse();
     let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
     let page = notion::Page::fetch(id, &args.secret).await;
+    let (title, date, lastmod) = notion::fetch_meta(id, &args.secret).await;
     let rsl = pandoc::Pandoc {
-        pandoc_api_version: PANDOC_API_VERSION,
-        meta: pandoc::Meta {},
+        pandoc_api_version: pandoc::PANDOC_API_VERSION,
+        meta: pandoc::Meta(HashMap::from_iter([
+            (
+                "date".to_string(),
+                pandoc::MetaValue::MetaString(date.date_naive().to_string()),
+            ),
+            (
+                "lastmod".to_string(),
+                pandoc::MetaValue::MetaString(lastmod.date_naive().to_string()),
+            ),
+            ("title".to_string(), pandoc::MetaValue::MetaString(title)),
+            (
+                "toc".to_string(),
+                pandoc::MetaValue::MetaBool(page.has_toc()),
+            ),
+        ])),
         blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
     };
     println!(
