@@ -495,3 +495,132 @@ impl Block {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_flatten_paragraph_block() {
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        let id3 = Uuid::new_v4();
+        let id4 = Uuid::new_v4();
+        let id5 = Uuid::new_v4();
+        let id6 = Uuid::new_v4();
+        let id7 = Uuid::new_v4();
+        let id8 = Uuid::new_v4();
+        let id9 = Uuid::new_v4();
+
+        let var1 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var2 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var3 = Var::Quote {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var4 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var5 = Var::Quote {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var6 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var7 = Var::Divider;
+        let var8 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var9 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+
+        let input = vec![Block {
+            archived: false,
+            id: id1,
+            var: var1,
+            children: Some(vec![
+                Block {
+                    archived: false,
+                    id: id2,
+                    var: var2,
+                    children: None,
+                },
+                Block {
+                    archived: false,
+                    id: id3,
+                    var: var3, // Quote
+                    children: Some(vec![Block {
+                        archived: false,
+                        id: id4,
+                        var: var4,
+                        children: Some(vec![
+                            Block {
+                                archived: false,
+                                id: id5,
+                                var: var5, // Quote
+                                children: Some(vec![Block {
+                                    archived: false,
+                                    id: id6,
+                                    var: var6,
+                                    children: None,
+                                }]),
+                            },
+                            Block {
+                                archived: false,
+                                id: id7,
+                                var: var7, // Divider
+                                children: None,
+                            },
+                            Block {
+                                archived: false,
+                                id: id8,
+                                var: var8,
+                                children: Some(vec![Block {
+                                    archived: false,
+                                    id: id9,
+                                    var: var9,
+                                    children: None,
+                                }]),
+                            },
+                        ]),
+                    }]),
+                },
+            ]),
+        }];
+
+        let mut result = flatten_paragraph_block(input);
+
+        assert_eq!(result.len(), 3);
+
+        let result3 = result.pop().unwrap();
+        let result2 = result.pop().unwrap();
+        let result1 = result.pop().unwrap();
+
+        assert_eq!(result1.id, id1);
+        assert_eq!(result2.id, id2);
+
+        let Block { id, children, .. } = result3;
+        let mut children = children.unwrap();
+
+        assert_eq!(id, id3);
+        assert_eq!(children.len(), 5);
+
+        let result5 = children.pop().unwrap();
+        let result4 = children.pop().unwrap();
+        let result3 = children.pop().unwrap();
+        let result2 = children.pop().unwrap();
+        let result1 = children.pop().unwrap();
+
+        assert_eq!(result1.id, id4);
+        assert_eq!(result2.id, id5);
+        assert_eq!(result2.children.unwrap().pop().unwrap().id, id6);
+        assert_eq!(result3.id, id7);
+        assert_eq!(result4.id, id8);
+        assert_eq!(result5.id, id9);
+    }
+}
