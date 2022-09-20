@@ -24,7 +24,7 @@ where
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Block {
     pub id: Uuid,
     pub archived: bool,
@@ -34,7 +34,7 @@ pub struct Block {
     pub children: Option<Vec<Block>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Var {
     Paragraph {
@@ -148,36 +148,36 @@ pub enum Var {
     Unsupported,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Inline {
     pub rich_text: Vec<RichText>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Callout {
     pub rich_text: Vec<RichText>,
     pub icon: Icon,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct ToDo {
     pub rich_text: Vec<RichText>,
     pub checked: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Code {
     pub rich_text: Vec<RichText>,
     pub caption: Vec<RichText>,
     pub language: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Equation {
     pub expression: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum File {
     External {
@@ -190,62 +190,62 @@ pub enum File {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Embed {
     pub caption: Vec<RichText>,
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Link {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LinkToPage {
     PageId { page_id: Uuid },
     DatabaseId { database_id: Uuid },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Icon {
     Emoji { emoji: String },
     External { external: Link },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Emoji {
     pub emoji: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct ExternalFileLink {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct FileLink {
     pub url: String,
     pub expiry_time: DateTime<Local>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Table {
     pub table_width: u64,
     pub has_column_header: bool,
     pub has_row_header: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct TableRow {
     pub cells: Vec<Vec<RichText>>,
 }
 
 // common structs
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RichText {
     Text {
@@ -263,13 +263,13 @@ pub enum RichText {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Text {
     pub content: String,
     pub link: Option<Link>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Mention {
     Page { page: PageId },
@@ -277,12 +277,12 @@ pub enum Mention {
     User,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct PageId {
     pub id: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct Annotations {
     pub bold: bool,
     pub italic: bool,
@@ -542,48 +542,48 @@ mod tests {
         let input = vec![Block {
             archived: false,
             id: id1,
-            var: var1,
+            var: var1.clone(),
             children: Some(vec![
                 Block {
                     archived: false,
                     id: id2,
-                    var: var2,
+                    var: var2.clone(),
                     children: None,
                 },
                 Block {
                     archived: false,
                     id: id3,
-                    var: var3, // Quote
+                    var: var3.clone(), // Quote
                     children: Some(vec![Block {
                         archived: false,
                         id: id4,
-                        var: var4,
+                        var: var4.clone(),
                         children: Some(vec![
                             Block {
                                 archived: false,
                                 id: id5,
-                                var: var5, // Quote
+                                var: var5.clone(), // Quote
                                 children: Some(vec![Block {
                                     archived: false,
                                     id: id6,
-                                    var: var6,
+                                    var: var6.clone(),
                                     children: None,
                                 }]),
                             },
                             Block {
                                 archived: false,
                                 id: id7,
-                                var: var7, // Divider
+                                var: var7.clone(), // Divider
                                 children: None,
                             },
                             Block {
                                 archived: false,
                                 id: id8,
-                                var: var8,
+                                var: var8.clone(),
                                 children: Some(vec![Block {
                                     archived: false,
                                     id: id9,
-                                    var: var9,
+                                    var: var9.clone(),
                                     children: None,
                                 }]),
                             },
@@ -593,34 +593,298 @@ mod tests {
             ]),
         }];
 
-        let mut result = flatten_paragraph_block(input);
+        let expect = vec![
+            Block {
+                archived: false,
+                id: id1,
+                var: var1,
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id2,
+                var: var2,
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id3,
+                var: var3, // Quote
+                children: Some(vec![
+                    Block {
+                        archived: false,
+                        id: id4,
+                        var: var4,
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id5,
+                        var: var5, // Quote
+                        children: Some(vec![Block {
+                            archived: false,
+                            id: id6,
+                            var: var6,
+                            children: None,
+                        }]),
+                    },
+                    Block {
+                        archived: false,
+                        id: id7,
+                        var: var7, // Divider
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id8,
+                        var: var8,
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id9,
+                        var: var9,
+                        children: None,
+                    },
+                ]),
+            },
+        ];
 
-        assert_eq!(result.len(), 3);
+        let result = flatten_paragraph_block(input);
+        assert_eq!(result, expect);
+    }
 
-        let result3 = result.pop().unwrap();
-        let result2 = result.pop().unwrap();
-        let result1 = result.pop().unwrap();
+    #[test]
+    fn test_join_list_block() {
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        let id3 = Uuid::new_v4();
+        let id4 = Uuid::new_v4();
+        let id5 = Uuid::new_v4();
+        let id6 = Uuid::new_v4();
+        let id7 = Uuid::new_v4();
+        let id8 = Uuid::new_v4();
+        let id9 = Uuid::new_v4();
 
-        assert_eq!(result1.id, id1);
-        assert_eq!(result2.id, id2);
+        let var1 = Var::BulletedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var2 = Var::BulletedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var3 = Var::ToggleListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var4 = Var::NumberedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var5 = Var::NumberedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var6 = Var::ToggleListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var7 = Var::NumberedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var8 = Var::NumberedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var9 = Var::BulletedListItem {
+            inline: Inline { rich_text: vec![] },
+        };
 
-        let Block { id, children, .. } = result3;
-        let mut children = children.unwrap();
+        let input = vec![
+            Block {
+                archived: false,
+                id: id1,
+                var: var1.clone(),
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id2,
+                var: var2.clone(),
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id3,
+                var: var3.clone(),
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id4,
+                var: var4.clone(), // NumberedListItem
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id5,
+                var: var5.clone(), // NumberedListItem
+                children: None,
+            },
+            Block {
+                archived: false,
+                id: id6,
+                var: var6.clone(),
+                children: Some(vec![
+                    Block {
+                        archived: false,
+                        id: id7,
+                        var: var7.clone(), // NumberedListItem
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id8,
+                        var: var8.clone(), // NumberedListItem
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id9,
+                        var: var9.clone(),
+                        children: None,
+                    },
+                ]),
+            },
+        ];
 
-        assert_eq!(id, id3);
-        assert_eq!(children.len(), 5);
+        let expect = vec![
+            Block {
+                archived: false,
+                id: id1,
+                var: Var::BulletedList,
+                children: Some(vec![
+                    Block {
+                        archived: false,
+                        id: id1,
+                        var: var1,
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id2,
+                        var: var2,
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id3,
+                        var: var3,
+                        children: None,
+                    },
+                ]),
+            },
+            Block {
+                archived: false,
+                id: id4,
+                var: Var::NumberedList,
+                children: Some(vec![
+                    Block {
+                        archived: false,
+                        id: id4,
+                        var: var4,
+                        children: None,
+                    },
+                    Block {
+                        archived: false,
+                        id: id5,
+                        var: var5,
+                        children: None,
+                    },
+                ]),
+            },
+            Block {
+                archived: false,
+                id: id6,
+                var: Var::BulletedList,
+                children: Some(vec![Block {
+                    archived: false,
+                    id: id6,
+                    var: var6,
+                    children: Some(vec![
+                        Block {
+                            archived: false,
+                            id: id7,
+                            var: Var::NumberedList,
+                            children: Some(vec![
+                                Block {
+                                    archived: false,
+                                    id: id7,
+                                    var: var7, // NumberedListItem
+                                    children: None,
+                                },
+                                Block {
+                                    archived: false,
+                                    id: id8,
+                                    var: var8, // NumberedListItem
+                                    children: None,
+                                },
+                            ]),
+                        },
+                        Block {
+                            archived: false,
+                            id: id9,
+                            var: Var::BulletedList,
+                            children: Some(vec![Block {
+                                archived: false,
+                                id: id9,
+                                var: var9,
+                                children: None,
+                            }]),
+                        },
+                    ]),
+                }]),
+            },
+        ];
 
-        let result5 = children.pop().unwrap();
-        let result4 = children.pop().unwrap();
-        let result3 = children.pop().unwrap();
-        let result2 = children.pop().unwrap();
-        let result1 = children.pop().unwrap();
+        let result = join_list_block(input);
+        assert_eq!(result, expect);
+    }
 
-        assert_eq!(result1.id, id4);
-        assert_eq!(result2.id, id5);
-        assert_eq!(result2.children.unwrap().pop().unwrap().id, id6);
-        assert_eq!(result3.id, id7);
-        assert_eq!(result4.id, id8);
-        assert_eq!(result5.id, id9);
+    #[test]
+    fn test_has_toc() {
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        let var1 = Var::Paragraph {
+            inline: Inline { rich_text: vec![] },
+        };
+        let var2 = Var::TableOfContents;
+
+        let input = Page {
+            blocks: vec![Block {
+                archived: false,
+                id: id1,
+                var: var1.clone(),
+                children: Some(vec![Block {
+                    archived: false,
+                    id: id2,
+                    var: var2,
+                    children: None,
+                }]),
+            }],
+        };
+
+        assert!(input.has_toc());
+
+        let input = Page {
+            blocks: vec![Block {
+                archived: false,
+                id: id1,
+                var: var1.clone(),
+                children: Some(vec![Block {
+                    archived: false,
+                    id: id2,
+                    var: var1,
+                    children: None,
+                }]),
+            }],
+        };
+
+        assert!(!input.has_toc());
     }
 }
