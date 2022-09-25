@@ -141,7 +141,7 @@ impl notion::Block {
             }
 
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
-                let html = embed::embed_html(&embed.url).await;
+                let html = embed::embed_tag(&embed.url).await;
                 if let Some(html) = html {
                     pandoc::Block::RawBlock(pandoc::Format("html".to_string()), html)
                 } else {

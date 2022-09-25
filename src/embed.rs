@@ -4,6 +4,17 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use serde_json;
 
+fn embed_tag_exceptional(url: &str) -> Option<String> {
+    if Regex::new(r"https://gist\.github\.com/*")
+        .unwrap()
+        .is_match(url)
+    {
+        Some(format!(r#"<script src="{}.js"></script>"#, url))
+    } else {
+        None
+    }
+}
+
 fn oembed_by_providers_json(url: &str) -> Option<String> {
     let json = include_str!("../embed/providers.json");
     #[derive(Debug, Deserialize)]
@@ -47,31 +58,36 @@ fn oembed_by_providers_json(url: &str) -> Option<String> {
     None
 }
 
-pub async fn embed_html(url: &str) -> Option<String> {
+pub async fn embed_tag(url: &str) -> Option<String> {
+    if let Some(tag) = embed_tag_exceptional(url) {
+        return Some(tag);
+    }
+
     #[derive(Debug, Deserialize)]
     struct Oembed {
         html: String,
     }
 
+    // get embed tag by oEmbed API listed in providers.json
+    // https://oembed.com/providers.json
     if let Some(oembed_endpoint) = oembed_by_providers_json(url) {
-        let params = vec![("url", url), ("format", "json")];
         let resp = Client::new()
             .get(oembed_endpoint.replace(r"{format}", "json"))
-            .query(&params)
+            .query(&vec![("url", url), ("format", "json")])
             .send()
             .await;
         if let Ok(resp) = resp {
-            let html = resp.json::<Oembed>().await;
-            if let Ok(embed) = html {
+            if let Ok(embed) = resp.json::<Oembed>().await {
                 return Some(embed.html);
             }
         }
     }
 
-    if let Some(page) = Client::new().get(url).send().await.ok() {
+    // try to use oEmbed discovery mechanism
+    // https://oembed.com/#section4
+    if let Ok(page) = Client::new().get(url).send().await {
         let mut oembed_url = None;
-        let html = page.text().await.ok();
-        if let Some(html) = html {
+        if let Ok(html) = page.text().await {
             let html = Html::parse_document(&html);
             let selector =
                 Selector::parse(r#"head > link[type="application/json+oembed"]"#).unwrap();
@@ -91,22 +107,3 @@ pub async fn embed_html(url: &str) -> Option<String> {
 
     None
 }
-
-#[tokio::test]
-async fn test_oembed() {
-    println!(
-        "{}",
-        embed_html("https://follower-anone.hatenablog.jp/entry/2022/09/11/214308")
-            .await
-            .unwrap_or("no".to_string())
-    );
-}
-
-//pub fn embed_html(url: String) -> Option<String> {
-//    // support gist, github, dropbox, google drive
-//
-//    // use oembed providers
-//
-//    // search by link tag
-//}
-//
