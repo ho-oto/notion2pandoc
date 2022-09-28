@@ -73,7 +73,7 @@ pub async fn embed_tag(url: &str) -> Option<String> {
     if let Some(oembed_endpoint) = oembed_by_providers_json(url) {
         let resp = Client::new()
             .get(oembed_endpoint.replace(r"{format}", "json"))
-            .query(&vec![("url", url), ("format", "json")])
+            .query(&vec![("url", url), ("format", "json"), ("maxwidth", "720")])
             .send()
             .await;
         if let Ok(resp) = resp {
