@@ -34,7 +34,7 @@ pub enum Block {
     Para(Vec<Inline>),
     // LineBlock(Vec<Vec<Inline>>),
     CodeBlock(Attr, String),
-    // RawBlock(Format, Text),
+    RawBlock(Format, String),
     BlockQuote(Vec<Block>),
     OrderedList(ListAttributes, Vec<Vec<Block>>),
     BulletList(Vec<Vec<Block>>),

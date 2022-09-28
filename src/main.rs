@@ -1,24 +1,29 @@
+mod embed;
 mod notion;
 mod pandoc;
 
 use std::collections::HashMap;
 
+use async_recursion::async_recursion;
 use clap::Parser;
+use futures::future::join_all;
 use itertools::join;
 use uuid::Uuid;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-struct Cli {
+struct Args {
     #[clap(short = 'i')]
     id: String,
     #[clap(short = 's')]
     secret: String,
+    #[clap(default_value_t = false)]
+    use_oembed: bool,
 }
 
 #[tokio::main]
 async fn main() {
-    let args = Cli::parse();
+    let args = Args::parse();
     let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
     let page = notion::Page::fetch(id, &args.secret).await;
     let (title, date, lastmod) = notion::fetch_meta(id, &args.secret).await;
@@ -39,7 +44,7 @@ async fn main() {
                 pandoc::MetaValue::MetaBool(page.has_toc()),
             ),
         ])),
-        blocks: page.blocks.into_iter().map(|b| b.to_pandoc()).collect(),
+        blocks: join_all(page.blocks.into_iter().map(|b| b.to_pandoc(&args))).await,
     };
     println!(
         "{}",
@@ -48,7 +53,8 @@ async fn main() {
 }
 
 impl notion::Block {
-    fn to_pandoc(self) -> pandoc::Block {
+    #[async_recursion]
+    async fn to_pandoc(self, args: &Args) -> pandoc::Block {
         match self.var {
             notion::Var::Paragraph { inline } => pandoc::Block::Para(inline.to_pandoc()),
             notion::Var::Heading1 { inline } => {
@@ -61,7 +67,7 @@ impl notion::Block {
                 pandoc::Block::Header(4, pandoc::Attr::default(), inline.to_pandoc())
             }
             notion::Var::Quote { inline } => {
-                pandoc::Block::BlockQuote(inline.to_pandoc_with_children(self.children))
+                pandoc::Block::BlockQuote(inline.to_pandoc_with_children(args, self.children).await)
             }
 
             notion::Var::Callout { callout } => pandoc::Block::Div(
@@ -115,9 +121,40 @@ impl notion::Block {
                     pandoc::Target(url, "".to_string()),
                 )])
             }
-            notion::Var::Video { file }
-            | notion::Var::File { file }
-            | notion::Var::PDF { file } => {
+            notion::Var::Video { file } => {
+                let embed = match &file {
+                    notion::File::File { .. } => None,
+                    notion::File::External { external, .. } => {
+                        if let Some(tag) = embed::embed_tag(&external.url).await {
+                            Some(pandoc::Block::RawBlock(
+                                pandoc::Format("html".to_string()),
+                                format!("<p>{}</p>", tag),
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(embed) = embed {
+                    embed
+                } else {
+                    let (caption, url) = match file {
+                        notion::File::File { caption, file } => (caption, file.url),
+                        notion::File::External { caption, external } => (caption, external.url),
+                    };
+                    let caption = if caption.is_empty() {
+                        vec![pandoc::Inline::Str(url.clone())]
+                    } else {
+                        caption.into_iter().map(|r| r.to_pandoc()).collect()
+                    };
+                    pandoc::Block::Para(vec![pandoc::Inline::Link(
+                        pandoc::Attr("".to_string(), vec!["video".to_string()], vec![]),
+                        caption,
+                        pandoc::Target(url, "".to_string()),
+                    )])
+                }
+            }
+            notion::Var::File { file } | notion::Var::PDF { file } => {
                 let (caption, url) = match file {
                     notion::File::File { caption, file } => (caption, file.url),
                     notion::File::External { caption, external } => (caption, external.url),
@@ -135,16 +172,20 @@ impl notion::Block {
             }
 
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
-                let caption = if embed.caption.is_empty() {
-                    vec![pandoc::Inline::Str(embed.url.clone())]
+                if let Some(tag) = embed::embed_tag(&embed.url).await {
+                    pandoc::Block::RawBlock(pandoc::Format("html".to_string()), tag)
                 } else {
-                    embed.caption.into_iter().map(|r| r.to_pandoc()).collect()
-                };
-                pandoc::Block::Para(vec![pandoc::Inline::Link(
-                    pandoc::Attr("".to_string(), vec!["embed".to_string()], vec![]),
-                    caption,
-                    pandoc::Target(embed.url, "".to_string()),
-                )])
+                    let caption = if embed.caption.is_empty() {
+                        vec![pandoc::Inline::Str(embed.url.clone())]
+                    } else {
+                        embed.caption.into_iter().map(|r| r.to_pandoc()).collect()
+                    };
+                    pandoc::Block::Para(vec![pandoc::Inline::Link(
+                        pandoc::Attr("".to_string(), vec!["embed".to_string()], vec![]),
+                        caption,
+                        pandoc::Target(embed.url, "".to_string()),
+                    )])
+                }
             }
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
@@ -196,11 +237,13 @@ impl notion::Block {
             notion::Var::TableOfContents => pandoc::Block::Null,
 
             notion::Var::BulletedList => pandoc::Block::BulletList(
-                self.children
-                    .expect("bulleted list should have children")
-                    .into_iter()
-                    .map(Self::convert_list_item)
-                    .collect(),
+                join_all(
+                    self.children
+                        .expect("bulleted list should have children")
+                        .into_iter()
+                        .map(|b| Self::convert_list_item(args, b)),
+                )
+                .await,
             ),
             notion::Var::NumberedList => pandoc::Block::OrderedList(
                 pandoc::ListAttributes(
@@ -208,11 +251,13 @@ impl notion::Block {
                     pandoc::ListNumberStyle::Decimal,
                     pandoc::ListNumberDelim::Period,
                 ),
-                self.children
-                    .expect("numbered list should have children")
-                    .into_iter()
-                    .map(Self::convert_list_item)
-                    .collect(),
+                join_all(
+                    self.children
+                        .expect("numbered list should have children")
+                        .into_iter()
+                        .map(|b| Self::convert_list_item(args, b)),
+                )
+                .await,
             ),
 
             _ => pandoc::Block::Null,
@@ -245,11 +290,13 @@ impl notion::Block {
         )
     }
 
-    fn convert_list_item(x: notion::Block) -> Vec<pandoc::Block> {
+    async fn convert_list_item(args: &Args, x: notion::Block) -> Vec<pandoc::Block> {
         match x.var {
             notion::Var::BulletedListItem { inline }
             | notion::Var::NumberedListItem { inline }
-            | notion::Var::ToggleListItem { inline } => inline.to_pandoc_with_children(x.children),
+            | notion::Var::ToggleListItem { inline } => {
+                inline.to_pandoc_with_children(args, x.children).await
+            }
             notion::Var::ToDoListItem { to_do } => {
                 let check_mark = format!("{}", if to_do.checked { "☒" } else { "☐" });
                 let mut text_with_box =
@@ -257,7 +304,7 @@ impl notion::Block {
                 text_with_box.extend(to_do.rich_text.into_iter().map(|r| r.to_pandoc()));
                 let mut result = vec![pandoc::Block::Plain(text_with_box)];
                 if let Some(children) = x.children {
-                    result.extend(children.into_iter().map(|b| b.to_pandoc()));
+                    result.extend(join_all(children.into_iter().map(|b| b.to_pandoc(args))).await);
                 }
                 result
             }
@@ -271,10 +318,14 @@ impl notion::Inline {
         self.rich_text.into_iter().map(|r| r.to_pandoc()).collect()
     }
 
-    fn to_pandoc_with_children(self, children: Option<Vec<notion::Block>>) -> Vec<pandoc::Block> {
+    async fn to_pandoc_with_children(
+        self,
+        args: &Args,
+        children: Option<Vec<notion::Block>>,
+    ) -> Vec<pandoc::Block> {
         let mut result = vec![pandoc::Block::Plain(self.to_pandoc())];
         if let Some(children) = children {
-            result.extend(children.into_iter().map(|b| b.to_pandoc()));
+            result.extend(join_all(children.into_iter().map(|b| b.to_pandoc(args))).await);
         }
         result
     }
