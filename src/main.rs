@@ -17,7 +17,7 @@ struct Args {
     id: String,
     #[clap(short = 's')]
     secret: String,
-    #[clap(default_value_t = false)]
+    #[clap(short = 'e')]
     use_oembed: bool,
 }
 
@@ -125,7 +125,11 @@ impl notion::Block {
                 let embed = match &file {
                     notion::File::File { .. } => None,
                     notion::File::External { external, .. } => {
-                        if let Some(tag) = embed::embed_tag(&external.url).await {
+                        if let Some(tag) = if args.use_oembed {
+                            embed::embed_tag(&external.url).await
+                        } else {
+                            None
+                        } {
                             Some(pandoc::Block::RawBlock(
                                 pandoc::Format("html".to_string()),
                                 format!("<p>{}</p>", tag),
@@ -172,7 +176,11 @@ impl notion::Block {
             }
 
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
-                if let Some(tag) = embed::embed_tag(&embed.url).await {
+                if let Some(tag) = if args.use_oembed {
+                    embed::embed_tag(&embed.url).await
+                } else {
+                    None
+                } {
                     pandoc::Block::RawBlock(pandoc::Format("html".to_string()), tag)
                 } else {
                     let caption = if embed.caption.is_empty() {
