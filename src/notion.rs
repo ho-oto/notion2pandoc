@@ -454,7 +454,12 @@ fn join_list_block(blocks: Vec<Block>) -> Vec<Block> {
 impl Page {
     pub async fn fetch(id: Uuid, secret: &String) -> Self {
         let mut blocks = fetch_blocks(id, secret).await;
-        join_all(blocks.iter_mut().map(|x| x.fetch_recursive(secret))).await;
+        join_all(
+            blocks
+                .iter_mut()
+                .map(|x| async { x.fetch_recursive(secret).await }),
+        )
+        .await;
         blocks = join_list_block(flatten_paragraph_block(blocks));
         Self { blocks }
     }
@@ -469,7 +474,12 @@ impl Block {
     pub async fn fetch_recursive(&mut self, secret: &String) {
         if let Some(_) = self.children {
             let mut children = fetch_blocks(self.id, secret).await;
-            join_all(children.iter_mut().map(|x| x.fetch_recursive(secret))).await;
+            join_all(
+                children
+                    .iter_mut()
+                    .map(|x| async { x.fetch_recursive(secret).await }),
+            )
+            .await;
             self.children = Some(children);
         }
     }
