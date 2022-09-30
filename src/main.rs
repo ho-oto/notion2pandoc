@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-struct Cli {
+struct Args {
     #[clap(short = 'i')]
     id: String,
     #[clap(short = 's')]
@@ -18,7 +18,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
-    let args = Cli::parse();
+    let args = Args::parse();
     let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
     let page = notion::Page::fetch(id, &args.secret).await;
     let (title, date, lastmod) = notion::fetch_meta(id, &args.secret).await;
@@ -104,47 +104,28 @@ impl notion::Block {
             )]),
 
             notion::Var::Image { file } => {
-                let (caption, url) = match file {
-                    notion::File::File { caption, file } => (caption, file.url),
-                    notion::File::External { caption, external } => (caption, external.url),
-                };
-                let caption = caption.into_iter().map(|r| r.to_pandoc()).collect();
+                let (caption, url, loc) = Self::unpack_file(file);
                 pandoc::Block::Para(vec![pandoc::Inline::Image(
-                    pandoc::Attr::default(),
-                    caption,
+                    pandoc::Attr("".to_string(), vec![loc], vec![]),
+                    caption.into_iter().map(|r| r.to_pandoc()).collect(),
                     pandoc::Target(url, "".to_string()),
                 )])
             }
-            notion::Var::Video { file }
-            | notion::Var::File { file }
-            | notion::Var::PDF { file } => {
-                let (caption, url) = match file {
-                    notion::File::File { caption, file } => (caption, file.url),
-                    notion::File::External { caption, external } => (caption, external.url),
-                };
-                let caption = if caption.is_empty() {
-                    vec![pandoc::Inline::Str(url.clone())]
-                } else {
-                    caption.into_iter().map(|r| r.to_pandoc()).collect()
-                };
-                pandoc::Block::Para(vec![pandoc::Inline::Link(
-                    pandoc::Attr("".to_string(), vec!["file".to_string()], vec![]),
-                    caption,
-                    pandoc::Target(url, "".to_string()),
-                )])
+            notion::Var::Video { file } => {
+                let (caption, url, loc) = Self::unpack_file(file);
+                Self::link(url, caption, vec!["video".to_string(), loc])
+            }
+            notion::Var::File { file } => {
+                let (caption, url, loc) = Self::unpack_file(file);
+                Self::link(url, caption, vec!["file".to_string(), loc])
+            }
+            notion::Var::PDF { file } => {
+                let (caption, url, loc) = Self::unpack_file(file);
+                Self::link(url, caption, vec!["pdf".to_string(), loc])
             }
 
             notion::Var::Embed { embed } | notion::Var::Bookmark { embed } => {
-                let caption = if embed.caption.is_empty() {
-                    vec![pandoc::Inline::Str(embed.url.clone())]
-                } else {
-                    embed.caption.into_iter().map(|r| r.to_pandoc()).collect()
-                };
-                pandoc::Block::Para(vec![pandoc::Inline::Link(
-                    pandoc::Attr("".to_string(), vec!["embed".to_string()], vec![]),
-                    caption,
-                    pandoc::Target(embed.url, "".to_string()),
-                )])
+                Self::link(embed.url, embed.caption, vec!["embed".to_string()])
             }
             notion::Var::LinkPreview { link_preview } => pandoc::Block::Para(vec![
                 pandoc::Inline::Str(link_preview.url.clone()).to_link(link_preview.url),
@@ -217,6 +198,28 @@ impl notion::Block {
 
             _ => pandoc::Block::Null,
         }
+    }
+
+    fn unpack_file(file: notion::File) -> (Vec<notion::RichText>, String, String) {
+        match file {
+            notion::File::File { caption, file } => (caption, file.url, "internal".to_string()),
+            notion::File::External { caption, external } => {
+                (caption, external.url, "external".to_string())
+            }
+        }
+    }
+
+    fn link(url: String, cap: Vec<notion::RichText>, attr: Vec<String>) -> pandoc::Block {
+        let caption = if cap.is_empty() {
+            vec![pandoc::Inline::Str(url.clone())]
+        } else {
+            cap.into_iter().map(|r| r.to_pandoc()).collect()
+        };
+        pandoc::Block::Para(vec![pandoc::Inline::Link(
+            pandoc::Attr("".to_string(), attr, vec![]),
+            caption,
+            pandoc::Target(url, "".to_string()),
+        )])
     }
 
     fn convert_table_row(x: notion::Block) -> pandoc::Row {
