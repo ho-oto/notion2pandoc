@@ -8,7 +8,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build
-        run: docker run --rm -u root -v "$(pwd)":/home/rust/src clux/muslrust:stable cargo build --release
+        run: |
+          docker pull clux/muslrust:stable
+          docker run -v "$(pwd)":/volume --rm -t clux/muslrust:stable cargo build --release
       - name: Archive
         run: |
           mkdir notion2pandoc-x86-64-linux
