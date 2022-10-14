@@ -39,7 +39,7 @@ jobs:
         if: contains(github.ref, 'refs/tags/')
         run: |
           gh release create ${{ steps.extract_tag.outputs.tag }} \
-          -t ${{ steps.extract_tag.outputs.tag }}
-          notion2pandoc-x86-64-linux.tar.gz \
+          -t ${{ steps.extract_tag.outputs.tag }} \
+          notion2pandoc-x86-64-linux.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
