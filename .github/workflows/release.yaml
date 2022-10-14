@@ -1,6 +1,6 @@
-name: CI
+name: CD
 
-on: push
+on: release
 
 jobs:
   build_for_linux:
@@ -26,20 +26,14 @@ jobs:
     needs: build_for_linux
     runs-on: ubuntu-22.04
     steps:
-      - name: Extract tag name
-        shell: bash
-        run: echo "##[set-output name=tag;]$(echo ${GITHUB_REF#refs/tags/})"
-        id: extract_tag
       - uses: actions/checkout@v2
       - name: Download the artifact
         uses: actions/download-artifact@v2
         with:
           name: ${{ github.sha }}-linux-artifacts
       - name: Release
-        if: contains(github.ref, 'refs/tags/')
         run: |
-          gh release create ${{ steps.extract_tag.outputs.tag }} \
-          -t ${{ steps.extract_tag.outputs.tag }} \
+          gh release upload ${{ github.event.release.tag_name }} \
           notion2pandoc-x86-64-linux.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
