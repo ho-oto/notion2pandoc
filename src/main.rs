@@ -9,6 +9,7 @@ use clap::Parser;
 use futures::future::join_all;
 use itertools::join;
 use uuid::Uuid;
+extern crate openssl_probe;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -23,6 +24,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    openssl_probe::init_ssl_cert_env_vars();
     let args = Args::parse();
     let id = Uuid::parse_str(&args.id).expect("ID should be UUID");
     let page = notion::Page::fetch(id, &args.secret).await;

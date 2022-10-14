@@ -1,0 +1,43 @@
+name: CI
+
+on: push
+
+jobs:
+  build_for_linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build
+        run: docker run --rm -u root -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder:1.57.0 cargo build --release
+      - name: Archive
+        run: |
+          mkdir notion2pandoc-x86-64-linux
+          cp target/x86_64-unknown-linux-musl/release/notion2pandoc notion2pandoc-x86-64-linux
+          tar czf notion2pandoc-x86-64-linux.tar.gz notion2pandoc-x86-64-linux
+      - name: Upload Linux executables as artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ github.sha }}-linux-artifacts
+          path: notion2pandoc-x86-64-linux.*
+
+  release_if_tag_exits:
+    needs: build_for_linux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Extract tag name
+        shell: bash
+        run: echo "##[set-output name=tag;]$(echo ${GITHUB_REF#refs/tags/})"
+        id: extract_tag
+      - uses: actions/checkout@v2
+      - name: Download the artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ github.sha }}-linux-artifacts
+      - name: Release
+        if: contains(github.ref, 'refs/tags/')
+        run: |
+          gh release create ${{ steps.extract_tag.outputs.tag }} \
+          -t ${{ steps.extract_tag.outputs.tag }}
+          notion2pandoc-x86-64-linux.tar.gz \
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

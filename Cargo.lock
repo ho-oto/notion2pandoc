@@ -744,6 +744,7 @@ dependencies = [
  "clap",
  "futures",
  "itertools",
+ "openssl-probe",
  "regex",
  "reqwest",
  "scraper",
