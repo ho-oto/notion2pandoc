@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build
-        run: docker run --rm -u root -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder:1.57.0 cargo build --release
+        run: docker run --rm -u root -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder:latest cargo build --release
       - name: Archive
         run: |
           mkdir notion2pandoc-x86-64-linux
