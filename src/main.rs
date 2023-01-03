@@ -306,10 +306,28 @@ impl notion::RichText {
                 }
             }
             notion::RichText::Mention {
-                plain_text,
                 annotations,
+                mention,
                 ..
-            } => Self::annotate(pandoc::Inline::Str(plain_text), annotations),
+            } => Self::annotate(
+                pandoc::Inline::Span(
+                    if let notion::Mention::Page { page } = mention {
+                        pandoc::Attr(
+                            "".to_string(),
+                            vec!["link_to_page".to_string()],
+                            vec![("id".to_string(), page.id.to_string())],
+                        )
+                    } else {
+                        pandoc::Attr(
+                            "".to_string(),
+                            vec!["unsupported".to_string(), "mention".to_string()],
+                            vec![],
+                        )
+                    },
+                    vec![],
+                ),
+                annotations,
+            ),
             notion::RichText::Equation {
                 annotations,
                 equation,

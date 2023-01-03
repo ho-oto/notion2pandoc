@@ -74,7 +74,7 @@ pub enum Inline {
     Link(Attr, Vec<Inline>, Target),
     Image(Attr, Vec<Inline>, Target),
     // Note(Vec<Block>),
-    // Span(Attr, Vec<Inline>),
+    Span(Attr, Vec<Inline>),
 }
 
 impl Inline {
