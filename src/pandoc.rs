@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 // https://hackage.haskell.org/package/pandoc-types-1.22.2.1/docs/Text-Pandoc-Definition.html
-pub static PANDOC_API_VERSION: [u64; 4] = [1, 22, 2, 1];
+pub static PANDOC_API_VERSION: [u64; 2] = [1, 23];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Pandoc {
-    pub pandoc_api_version: [u64; 4],
+    pub pandoc_api_version: [u64; 2],
     pub meta: Meta,
     pub blocks: Vec<Block>,
 }
@@ -50,7 +50,6 @@ pub enum Block {
         TableFoot,
     ),
     Div(Attr, Vec<Block>),
-    Null,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,10 +121,10 @@ pub enum ListNumberDelim {
 #[derive(Debug, Serialize)]
 pub struct Format(pub String);
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, PartialEq, Eq)]
 pub struct Attr(pub String, pub Vec<String>, pub Vec<(String, String)>);
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Target(pub String, pub String);
 
 #[derive(Debug, Serialize)]
