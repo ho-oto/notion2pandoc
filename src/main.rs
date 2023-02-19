@@ -297,6 +297,8 @@ impl notion::Inline {
                     if *attr_last == attr && *trg_last == trg {
                         vec_last.append(&mut vec);
                     }
+                } else {
+                    result.push(inline);
                 }
             } else {
                 result.push(inline);
