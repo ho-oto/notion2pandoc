@@ -58,17 +58,17 @@ impl notion::Block {
         match self.var {
             notion::Var::Paragraph { inline } => Some(pandoc::Block::Para(inline.to_pandoc())),
             notion::Var::Heading1 { inline } => Some(pandoc::Block::Header(
-                2,
+                1,
                 pandoc::Attr::default(),
                 inline.to_pandoc(),
             )),
             notion::Var::Heading2 { inline } => Some(pandoc::Block::Header(
-                3,
+                2,
                 pandoc::Attr::default(),
                 inline.to_pandoc(),
             )),
             notion::Var::Heading3 { inline } => Some(pandoc::Block::Header(
-                4,
+                3,
                 pandoc::Attr::default(),
                 inline.to_pandoc(),
             )),
