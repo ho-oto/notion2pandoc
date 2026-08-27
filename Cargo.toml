@@ -13,7 +13,7 @@ version = "0.5.1"
 [dependencies]
 async-recursion = "1.0.0"
 chrono = {version = "0.4.23", features = ["serde"]}
-clap = {version = "3.2.20", features = ["derive"]}
+clap = {version = "4.5", features = ["derive"]}
 futures = "0.3.24"
 itertools = "0.10.3"
 openssl-probe = "0.1.5"
