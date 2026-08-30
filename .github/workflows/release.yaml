@@ -24,18 +24,40 @@ jobs:
           name: ${{ github.sha }}-linux-artifacts
           path: notion2pandoc-x86-64-linux.*
 
-  release_if_tag_exits:
-    needs: build_for_linux
+  build_for_macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build
+        run: cargo build --release
+      - name: Archive
+        run: |
+          mkdir notion2pandoc-x86-64-macos
+          cp target/release/notion2pandoc notion2pandoc-x86-64-macos
+          zip -r notion2pandoc-x86-64-macos.zip notion2pandoc-x86-64-macos
+      - name: Upload macOS executables as artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ github.sha }}-macos-artifacts
+          path: notion2pandoc-x86-64-macos.zip
+
+  release_if_tag_exists:
+    needs: [build_for_linux, build_for_macos]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
-      - name: Download the artifact
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v2
         with:
           name: ${{ github.sha }}-linux-artifacts
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{ github.sha }}-macos-artifacts
       - name: Release
         run: |
           gh release upload ${{ github.event.release.tag_name }} \
-          notion2pandoc-x86-64-linux.tar.gz
+          notion2pandoc-x86-64-linux.tar.gz \
+          notion2pandoc-x86-64-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
