@@ -23,6 +23,8 @@ The API allows us to retrieve a list of the blocks that make up a page.
 However, when the number of blocks exceeds 100, the API must be called again with [pagination](https://developers.notion.com/reference/pagination).
 When a block has child blocks, another API call is necessary to retrieve their contents.
 
+To generate the secret, create a [Notion integration in your account](https://www.notion.so/my-integrations).
+
 ## Unsupported features
 
 notion2pandoc simply ignore blocks with following [Block Type Object](https://developers.notion.com/reference/block#block-type-object).
